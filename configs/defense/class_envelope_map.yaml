@@ -1,0 +1,143 @@
+# EO-asserted class → benign kinematic envelope map.
+# Frozen for the class–kinematics consistency scorer. Each EO class either
+# maps to a named envelope (trained on a subset of the benign AIS train corpus)
+# or abstains (scorer returns not-applicable — no fabricated envelope).
+#
+# See data/taxonomy.yaml (roles / coarse_only / ambiguous) and
+# data/behavior/benign_train_manifest.parquet (training pool).
+version: 1
+frozen: 2026-07-19
+feature_spec: configs/defense/scorer_features.yaml
+benign_corpus: data/behavior/benign_train_manifest.parquet
+
+# ---------------------------------------------------------------------------
+# Envelopes — named one-class models fitted in a later step.
+# `members` selects rows from the benign train corpus.
+# ---------------------------------------------------------------------------
+envelopes:
+  fishing:
+    description: AIS-labeled fishing vessels (pattern-bound, slow/loiter).
+    members:
+      canonical_class: [fishing]
+    notes: Strong kinematic constraint — hardest cheap disguise to honor.
+
+  sailing:
+    description: AIS-labeled sailing / sail-assisted craft.
+    members:
+      canonical_class: [sailing]
+    notes: Wind-capped speed + tacking pattern.
+
+  recreational:
+    description: AIS-labeled powered pleasure craft (speedboats, motorboats, yachts).
+    members:
+      canonical_class: [recreational]
+    notes: >
+      Kinematically permissive (weak_disguise). Expect weakest per-class
+      discriminability — reported honestly, not hidden.
+
+  passenger_ferry:
+    description: AIS-labeled passenger / ferry / HSC.
+    members:
+      canonical_class: [passenger_ferry]
+    notes: Route regularity is a strong benign signal.
+
+  cargo_merchant:
+    description: AIS-labeled cargo / tanker / bulk.
+    members:
+      canonical_class: [cargo_merchant]
+    notes: Lane-following, slow, low turn rate. Small craft unlikely to claim this.
+
+  working_service:
+    description: AIS-labeled tugs / pilots / SAR / dredgers / LE (task-bound).
+    members:
+      canonical_class: [working_service]
+    notes: >
+      Own envelope (not folded into cargo). Detector currently excludes this
+      class (0 EO boxes), so EO will not assert it today — envelope retained
+      for completeness and any future AIS-side / expanded-head use.
+
+  # Crux disguise class — no AIS ship-type code. Proxy = Class-B tracks from
+  # the fine classes small craft typically self-report as. Do NOT silently
+  # equate this with recreational or fishing alone (taxonomy: ambiguous).
+  small_craft_class_b_proxy:
+    description: >
+      Class-B pooled proxy for EO `small_craft` (generic boat / kayak /
+      unspecified small). Train on Class-B ∩ {recreational, fishing, sailing}.
+    members:
+      transceiver_class: [B]
+      canonical_class: [recreational, fishing, sailing]
+    notes: >
+      Excludes Class-B ferry/cargo/working_service (not small-craft kinematics).
+      This is the loosest envelope by design — the research question, not an
+      assumption. Report its FAR separately from labeled-class envelopes.
+
+# ---------------------------------------------------------------------------
+# EO class → envelope | abstain
+# ---------------------------------------------------------------------------
+eo_class_map:
+  # --- scoreable (own AIS-labeled envelope) ---
+  fishing:
+    policy: score
+    envelope: fishing
+  sailing:
+    policy: score
+    envelope: sailing
+  recreational:
+    policy: score
+    envelope: recreational
+  passenger_ferry:
+    policy: score
+    envelope: passenger_ferry
+  cargo_merchant:
+    policy: score
+    envelope: cargo_merchant
+  working_service:
+    policy: score
+    envelope: working_service
+    detector_asserts: false   # exclude_classes in configs/base.yaml
+
+  # --- scoreable via proxy ---
+  small_craft:
+    policy: score
+    envelope: small_craft_class_b_proxy
+    reason: >
+      No AIS ship-type code for small_craft. Small craft self-report as
+      recreational / fishing / sailing (or unknown). Class-B ∩ those fine
+      classes is the honest proxy; do not merge into a single labeled class.
+
+  # --- abstain (no benign envelope) ---
+  benign_unspecified:
+    policy: abstain
+    reason: >
+      Coarse-only civilian bucket (McShips civilianship). Taxonomy
+      coarse_only=true — no AIS ship-type or kinematic envelope. Scorer
+      returns not-applicable rather than inventing one.
+  military:
+    policy: abstain
+    reason: Hostile-asserted (large pole). No benign envelope; trajectories synthesized at eval.
+  usv:
+    policy: abstain
+    reason: Hostile-asserted (small threat). EO/appearance axis only; never enters the scorer.
+  static_aid:
+    policy: abstain
+    reason: non_target (buoys / AtoN) — not a vessel; no vessel envelope.
+  unknown_other:
+    policy: abstain
+    reason: non_target / unclassifiable — no class-conditional envelope.
+
+# Convenience roll-ups (derived; kept explicit for scripts).
+scoreable_eo_classes:
+  - fishing
+  - sailing
+  - recreational
+  - passenger_ferry
+  - cargo_merchant
+  - working_service
+  - small_craft
+
+abstain_eo_classes:
+  - benign_unspecified
+  - military
+  - usv
+  - static_aid
+  - unknown_other

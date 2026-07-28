@@ -1,0 +1,186 @@
+{
+  "version": {
+    "version": "2026-07-23+nogit",
+    "date": "2026-07-23",
+    "created_utc": "2026-07-23T11:52:37Z",
+    "git_sha": "nogit"
+  },
+  "policy": {
+    "includes_raw_imagery": false,
+    "includes_bulk_ais": false,
+    "includes_usv_pixels": false,
+    "redistributes": "annotations, manifests, derived track features, taxonomy, contracts"
+  },
+  "counts": {
+    "eo_images": 25262,
+    "eo_annotations": 71501,
+    "eo_per_class": {
+      "cargo_merchant": 12892,
+      "passenger_ferry": 7616,
+      "fishing": 2190,
+      "benign_unspecified": 5949,
+      "military": 9509,
+      "small_craft": 8443,
+      "recreational": 7092,
+      "static_aid": 7857,
+      "sailing": 8245,
+      "unknown_other": 1408,
+      "usv": 300
+    },
+    "detector_eligible": 67397,
+    "patch_eligible": 43761,
+    "eo_split": {
+      "train": 22804,
+      "test": 1229,
+      "val": 1229
+    },
+    "ais_tracks": 153811,
+    "video_eval_pool_tracks": null
+  },
+  "artifacts": [
+    {
+      "path": "taxonomy.yaml",
+      "sha256": "363846134ab6a2ef53f4080a5ee2efb834491c7749f7c104c47f06152af57b91",
+      "bytes": 16091
+    },
+    {
+      "path": "HARMONIZATION.md",
+      "sha256": "7defe7f19aebd6f6d77147980c4fa338f7a4cab4ff6a4025f1b2a85a71f7e9cd",
+      "bytes": 13983
+    },
+    {
+      "path": "DATACARD.md",
+      "sha256": "eac3220647f491b55d8a3b568718d7015a62c9cac28095132ec9c4e8ba923319",
+      "bytes": 916
+    },
+    {
+      "path": "DATACARD_EO.md",
+      "sha256": "3c1c11e92e5e0f0d1d650222cca1c052f7dfeeb044773a606ed0dd4cecd80a32",
+      "bytes": 7602
+    },
+    {
+      "path": "DATACARD_TRACKS.md",
+      "sha256": "93f2c1ecf7d63460706f247c3fae710d43e2c3fc5fafe24ed4b44670560f6d81",
+      "bytes": 6290
+    },
+    {
+      "path": "annotations/coco_master.json",
+      "sha256": "86557fef677c26cdf4fb4e75c232391f51f49362530b31f5d177b4c95178ecd7",
+      "bytes": 16334090
+    },
+    {
+      "path": "annotations/convert_summary.json",
+      "sha256": "f5dbe3ad5655b518793d973651e980aa7e05ca4aa3f4d53b047006782d8a3f8d",
+      "bytes": 1796
+    },
+    {
+      "path": "annotations/seaships.coco.json",
+      "sha256": "f45c00331366525865890f4be022956b719ef97748b580bbf6c01c963826334e",
+      "bytes": 2721669
+    },
+    {
+      "path": "annotations/mcships.coco.json",
+      "sha256": "923b349bed1d7b64a9fe576ecf49d65b3d34450aae9601d292b62b22750b808a",
+      "bytes": 3130760
+    },
+    {
+      "path": "annotations/aboships.coco.json",
+      "sha256": "354c5cdc2df32d893dc589f7ef26efeb158e56842daff6c2fcc510ddc7a5581a",
+      "bytes": 8605252
+    },
+    {
+      "path": "annotations/smd.coco.json",
+      "sha256": "d60718739532a4fb02e184976f5e21755f6273ebc9a2feb5a76a75da7ac8d01e",
+      "bytes": 1579185
+    },
+    {
+      "path": "annotations/usv.coco.json",
+      "sha256": "6a6afb9bafe8da87383cd961e62311e281571e28517d9a5da874eb99529742a4",
+      "bytes": 174654
+    },
+    {
+      "path": "audit/eo_annotations.csv",
+      "sha256": "9c3e7b8a0df091f3ae1f87a421a2ca3e926eb05cf82ef320cd41bd4f9a3782b6",
+      "bytes": 10397485
+    },
+    {
+      "path": "audit/eo_images.csv",
+      "sha256": "a61206761f50c926c0346896290901cd9d612f4dbf9e0aca09515c7dbc0e6b10",
+      "bytes": 4618978
+    },
+    {
+      "path": "audit/eo_audit_summary.json",
+      "sha256": "101b139138915eea19da867a833c925545a5e334af1cb27f32dc471dee464a18",
+      "bytes": 3918
+    },
+    {
+      "path": "eval_slices/small_craft_eval_annotations.csv",
+      "sha256": "99e5c1c0857965df997ebbc80885e35d76bd7d0e3bcba73c18f62ffb2fb61219",
+      "bytes": 5332945
+    },
+    {
+      "path": "eval_slices/small_craft_eval_images.csv",
+      "sha256": "1abab09bd0ab024ddacb4381eaea2ffdc7f68bd52dd6949dd0f06c50e6144e13",
+      "bytes": 1323692
+    },
+    {
+      "path": "eval_slices/small_craft_eval_summary.json",
+      "sha256": "8b1d19521fbde91f7a144d856f58dbc88a393aed584cf45f6fce373aa1067e8e",
+      "bytes": 2521
+    },
+    {
+      "path": "splits/eo_image_splits.csv",
+      "sha256": "f4c11fb5fceda4b1c2a00c86e9a8f653334fd9b35e9e6d47b4dedfd101c36de7",
+      "bytes": 4749548
+    },
+    {
+      "path": "splits/ais_track_splits.csv",
+      "sha256": "b252b01835d76d6cd200dadcb73d8fae19b5da4bb01387ef500a681673522113",
+      "bytes": 14790170
+    },
+    {
+      "path": "splits/video_eval_pool.csv",
+      "sha256": "9cbbf38b7298c3a26b0bb8381d68f3c3b8d661edbd38ae3a3ed2af721280563b",
+      "bytes": 38792
+    },
+    {
+      "path": "splits/splits_summary.json",
+      "sha256": "6857034ba45ed30aedc841876bea823e79b1587186a1bfbe3acd0140af815c56",
+      "bytes": 5038
+    },
+    {
+      "path": "tracks/tracks_ais.parquet",
+      "sha256": "c3721b55e93492daa1f14f8613d932ebe40152d3426cc937e231b080e7462d60",
+      "bytes": 18383338
+    },
+    {
+      "path": "tracks/tracks_ais_points.parquet",
+      "sha256": "5eb2938c46471d4c168e68be450129b3849c9288742d38a7e57bf396aa6f5437",
+      "bytes": 721419331
+    },
+    {
+      "path": "tracks/tracks_video.parquet",
+      "sha256": "b4516430c1de75968161b2f67f58f95cc1c45f8b694c99a99a44e4cea6ee3bbc",
+      "bytes": 49521
+    },
+    {
+      "path": "tracks/tracks_video_points.parquet",
+      "sha256": "49af60d8111263b20f9685dc01ee900dac9db0544c9922f62dbb187ab3e65153",
+      "bytes": 207027
+    },
+    {
+      "path": "raw/usv/manifest.csv",
+      "sha256": "895397f311e341ba2fc13fe818a09da67da63e5caddf036f5aa2ecb9661688ae",
+      "bytes": 109094
+    }
+  ],
+  "n_artifacts": 27,
+  "n_missing": 0,
+  "missing": [],
+  "checksums_file": "CHECKSUMS.derived.sha256",
+  "data_cards": [
+    "DATACARD.md",
+    "DATACARD_EO.md",
+    "DATACARD_TRACKS.md"
+  ]
+}

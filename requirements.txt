@@ -1,0 +1,38 @@
+# Counter-USV adversarial robustness — Python dependencies.
+# Versions are intentionally left unpinned until the first working install on the
+# target machine, then pin with `pip freeze > requirements.lock.txt`.
+# Target: Python 3.10+ with a CUDA-enabled PyTorch build (single GPU).
+
+# Core numerics / data
+numpy
+scipy
+pandas
+pyyaml
+tqdm
+
+# Imaging
+opencv-python # cv2 for video-frame IO (also required by ultralytics)
+Pillow
+scikit-image
+
+# ML / detection
+torch
+torchvision
+ultralytics # YOLO detector baselines
+pycocotools # COCO-format annotations + mAP
+scikit-learn # one-class benign-behavior scorer, KDE/uncertainty baselines
+
+# Trajectory / AIS handling (benign-behavior model)
+pyproj # geodesic / projection for track kinematics
+movingpandas # trajectory features (speed, turn-rate, straightness); pulls in geopandas/shapely
+pyarrow # parquet IO for the AIS/video track corpora (tracks_*.parquet)
+
+# Plotting / tracking
+matplotlib
+tensorboard
+
+# Tests
+pytest
+
+# Data curation (usv EO set, the curated usv set)
+ddgs # keyless web image search (source-URL per result) for scrape+QC curation

@@ -1,0 +1,23 @@
+# Paths relative to the repo root that the EO detector baselines need on the
+# GPU box. Used by scripts/detector/sync_eo_train_bundle.sh. Intentionally excludes AIS
+# (~6.7G), SMD videos (~3G+), and leftover/legacy trees — only master-referenced
+# imagery + annotations/splits/contracts.
+#
+# Approx total: ~10 GB. Re-run scripts/data/export_eo_views.py ON the GPU box after
+# sync (symlinks in data/eo_views/ are absolute and machine-local).
+
+data/annotations/
+data/splits/
+data/taxonomy.yaml
+data/HARMONIZATION.md
+data/raw/aboships/Seaships/
+data/raw/mcships/JPEGImages/
+data/raw/seaships/JPEGImages/
+data/raw/smd/frames/
+data/raw/usv/scraped/
+data/raw/usv/frames/
+configs/
+scripts/
+src/
+requirements.txt
+requirements.lock.txt

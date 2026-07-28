@@ -1,0 +1,78 @@
+# Benign-behavior model recipe (one-class envelopes).
+# Locked 2026-07-20: GMM primary + Mahalanobis + IsolationForest baselines.
+# Select by held-out *benign* calibration quality only — never by hostile/attack signal.
+version: 1
+frozen: 2026-07-20
+
+feature_spec: configs/defense/scorer_features.yaml
+envelope_map: configs/defense/class_envelope_map.yaml
+
+# Training tables (multi-horizon). Fit one envelope per horizon; at score time
+# use the longest horizon whose window is complete for the contact (short-track
+# coverage). Primary horizon drives the headline report.
+window_s: 300                 # primary observation window
+windows_s: [120, 180, 300]    # all fitted horizons (short → long)
+require_complete: true        # window_complete == True
+features_path: data/behavior/features_window_300s.parquet   # primary (compat)
+features_path_template: data/behavior/features_window_{w}s.parquet
+splits: data/splits/ais_track_splits.csv
+
+# Deduplicated feature *subset* for the one-class fit (not a second copy of the
+# full contract — that is feature_spec / scorer_features.yaml). Drops collinear
+# sog_* / turn_p95 / accel_std. Core always used; course used only when all
+# course cols are non-null.
+features:
+  core:
+    - sog_med
+    - sog_p95
+    - sog_std
+    - loiter_frac
+    - straightness
+    - accel_mean_abs
+  course:                     # COG-derived; gated non-null
+    - turn_rate_mean_dps
+    - cog_circ_std_deg
+
+# Dual subspace: every envelope fits both; at score time pick course model
+# iff all course features are present, else core-only.
+subspaces: [core, core_course]
+
+models:
+  primary: gmm
+  baselines: [mahalanobis, isolation_forest]
+
+  gmm:
+    # Val benign mean log-likelihood saturates by k~8-10 (diagnostic curves);
+    # beyond k~12 the surface is dominated by degenerate-component noise (±1 nat
+    # swings between adjacent k), so the sweep is capped at 12 — past the real
+    # knee, before the noise regime.
+    n_components_sweep: [1, 2, 3, 4, 5, 6, 8, 10, 12]
+    covariance_type: full
+    reg_covar: 1.0e-6
+    max_iter: 200
+    n_init: 3
+    # Knee rule: pick the smallest k whose val benign mean log-likelihood is
+    # within selection_tol_nats of the best. Avoids chasing marginal/noisy gains.
+    selection: val_loglik_knee
+    selection_tol_nats: 0.5
+
+  mahalanobis:
+    # Empirical mean + Ledoit-Wolf shrunk covariance; score = Mahalanobis distance.
+    shrinkage: ledoit_wolf
+
+  isolation_forest:
+    n_estimators: 200
+    max_samples: auto
+    contamination: auto
+    random_state: 1337
+
+# Score convention: higher = more anomalous (inconsistent with benign).
+# GMM: -log p(x); Mahalanobis: distance; IForest: -score_samples.
+calibration:
+  # Thresholds = percentiles of *val benign* scores. Flag if score > threshold.
+  far_targets: [0.01, 0.05, 0.10]   # 1%, 5%, 10% false-alarm operating points
+  default_far: 0.05
+
+# Reproducibility
+seed: 1337
+min_train_rows: 50            # skip envelope/subspace if fewer usable rows

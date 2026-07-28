@@ -1,0 +1,46 @@
+# Disguise attack (TMSR) — targeted hostile→benign misclassification layered on
+# the shared patch core (configs/attacks/patch.yaml) and marine-EOT recipe
+# (configs/attacks/marine_eot.yaml). Geometry / printability / EOT expectation
+# are NOT redefined here — this file only fixes the disguise objective and the
+# TMSR success thresholds. Digest with patch.yaml + marine_eot.yaml at freeze.
+version: 1
+frozen: 2026-07-27
+
+# White-box crafting surrogate. Held-out transfer target (rtdetr_l) is refused
+# for crafting in code (same as evasion).
+surrogate:
+  family: yolo11s
+  true_class: usv              # hostile class we flip away from
+  device: auto                 # auto → cuda on RunPod; override with --device 0
+
+# Target benign classes for the hostile→benign flip (METRICS.md / plan 4.4).
+# Runner reports TMSR separately for each.
+target_benign_classes: [fishing, recreational]
+
+# Disguise objective: raise the target benign class confidence on the target
+# box while suppressing the true (usv) class — keep the contact detected under
+# the benign label (full evasion is a different success condition).
+objective:
+  target_pad_frac: 0.15
+  smoothmax_temperature: 20.0
+  fallback_global_max: true
+  # loss = true_weight * smoothmax(usv) − benign_weight * smoothmax(benign)
+  true_weight: 1.0
+  benign_weight: 1.0
+
+optimization:
+  steps: 150
+  lr: 0.05
+
+# TMSR success (docs/METRICS.md): clean was correct hostile; attacked still has
+# a box IoU ≥ iou_match with GT whose predicted class is the target benign
+# class at score ≥ conf_threshold.
+evaluation:
+  conf_threshold: 0.25
+  iou_match: 0.5
+  nms_iou: 0.7
+  severity_axes: [scale, rotation, motion_blur, glare, spray, grazing_angle, sea_state]
+  severity_levels: [L0, L1, L2, L3, L4]
+  marine_eot_config: configs/attacks/marine_eot.yaml
+
+seed: 1337

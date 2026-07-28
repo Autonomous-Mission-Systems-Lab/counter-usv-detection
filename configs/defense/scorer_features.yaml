@@ -1,0 +1,132 @@
+# Scorer feature contract — frozen benign-behavior / kinematic consistency features.
+# Single source of truth for the one-class consistency scorer feature *set*
+# (extraction + corpus). Aligns with data/HARMONIZATION.md §B.4 and
+# docs/DATA_DICTIONARY.md. The model fit *subset* (deduped core/course) lives in
+# configs/defense/behavior_model.yaml → features. configs/base.yaml → kinematics
+# points here via feature_spec.
+version: 1
+frozen: 2026-07-19
+
+# Cadence / window (authoritative for extraction; base.yaml may restate defaults).
+resample_seconds: 30          # target cadence when denser data is available
+                              # (AIS points are already ~60 s thinned; used as-is)
+observation_window_s: 300     # primary history for a consistency decision (swept in eval)
+observation_window_sweep_s: [120, 180, 300, 600]  # time-to-flag sweep
+# Note: AIS points are ~60–100 s apart, so W < ~2×cadence rarely yields ≥2
+# points; 60 s was dropped from the sweep for that reason.
+
+# Window extraction policy (locked 2026-07-19)
+window_policy:
+  placement: last             # last W seconds of each track (runtime-faithful)
+  per_track_per_length: 1     # one window per trip_id per W — no sliding/tiling
+  min_points: 2               # ≥1 segment for path/turn; AIS cadence ≈ 60–100 s
+  min_span_frac: 0.5          # observed span must be ≥ 0.5·W to count as usable
+  incomplete_policy: keep_flagged  # keep short tracks with window_complete=false
+  whole_track: true           # also emit whole-track features as long-horizon limit
+
+# ---------------------------------------------------------------------------
+# Feature groups
+#
+# Columns are the names in data/tracks/tracks_ais.parquet (whole-track summary) and
+# the matching windowed recomputes from data/tracks/tracks_ais_points.parquet.
+# Scorer-facing aliases are what ConsistencyScorer / model code consume.
+# ---------------------------------------------------------------------------
+
+# Always-used kinematic features (metric world-frame). NaN → mask (never fill 0).
+core:
+  - name: sog_mean
+    alias: speed_mean
+    units: knots
+    null_policy: mask
+  - name: sog_med
+    alias: speed_med
+    units: knots
+    null_policy: mask
+  - name: sog_p95
+    alias: speed_p95
+    units: knots
+    null_policy: mask
+  - name: sog_max
+    alias: speed_max
+    units: knots
+    null_policy: mask
+  - name: sog_std
+    alias: speed_std
+    units: knots
+    null_policy: mask
+  - name: loiter_frac
+    alias: loiter_frac
+    units: "[0,1]"
+    null_policy: mask   # currently 0% null in AIS corpus
+    definition: fraction of points with SOG < 0.5 kn
+  - name: straightness
+    alias: straightness
+    units: "[0,1]"
+    null_policy: mask
+    definition: net_km / path_km
+  - name: accel_mean_abs
+    alias: accel_mean_abs
+    units: kn/min
+    null_policy: mask
+  - name: accel_std
+    alias: accel_std
+    units: kn/min
+    null_policy: mask
+
+# Course / turn features — COG-derived (not bow-heading). ~15–18% null when there
+# are no measurable course changes. Gate: feature is usable iff non-null.
+# Do NOT fill with 0 (would look like "perfectly straight / no turning").
+course:
+  - name: turn_rate_mean_dps
+    alias: turn_rate
+    units: deg/s
+    null_policy: mask
+    gate: non_null
+  - name: turn_rate_p95_dps
+    alias: turn_rate_p95
+    units: deg/s
+    null_policy: mask
+    gate: non_null
+  - name: cog_circ_std_deg
+    alias: cog_circ_std
+    units: deg
+    null_policy: mask
+    gate: non_null
+
+# Quality / gating columns (not scored directly; control which feature subset
+# is active for a track). Class-B heading is often absent (~12% mean availability
+# vs ~60% on Class-A) — heading-derived features are therefore NOT in the scorer
+# set. heading_avail_frac is retained as a reported quality flag only.
+gates:
+  heading_avail_frac:
+    units: "[0,1]"
+    role: quality_flag
+    note: >
+      Bow-heading availability. Low on Class-B. Does not gate the COG-derived
+      course features above (those gate on their own non-null). Future
+      heading-derived features would require heading_avail_frac >= threshold.
+  heading_avail_threshold: 0.25   # reserved for any future heading-derived feats
+
+# Deliberately NOT included
+excluded:
+  range_to_shore:
+    reason: geography ≠ behavior; no shoreline + cross-region normalization in corpus
+  pos_speed_mean_kn:
+    reason: recomputed from position/time; GPS-jitter inflated over small dt (noisy)
+  heading_derived:
+    reason: Class-B heading largely unavailable; COG covers course stability
+
+# ---------------------------------------------------------------------------
+# Training corpus firewall (benign-only)
+# ---------------------------------------------------------------------------
+corpus:
+  tracks: data/tracks/tracks_ais.parquet
+  splits: data/splits/ais_track_splits.csv
+  train_split: train
+  keep_roles: [benign]
+  # Hard-exclude (role filter already drops these; restated for the attestation):
+  exclude_roles: [hostile, non_target]
+  exclude_classes: [military, usv, static_aid, unknown_other]
+  # usv never appears in AIS; listed so the scorer pipeline can hard-refuse it.
+  refuse_sources: [usv]
+  null_policy: mask_not_zero   # NaN = missing, never impute 0 for kinematics

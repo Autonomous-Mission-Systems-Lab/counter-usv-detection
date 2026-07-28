@@ -1,0 +1,39 @@
+# Small YOLO baseline (surrogate). Overrides configs/base.yaml.
+# Trains on the 11-class harmonized EO view (data/eo_views/yolo/data.yaml);
+# augmentation follows data/HARMONIZATION.md (train-time mosaic+multiscale ON,
+# eval letterbox-only). Class space & label policy come from base.yaml `detector`.
+name: yolo11s
+extends: ../base.yaml
+
+detector:
+  arch: yolo11
+  scale: s
+  model: yolo11s.yaml     # Ultralytics architecture
+  pretrained: yolo11s.pt  # COCO-pretrained init
+  family_group: yolo_small
+  transfer_role: surrogate  # used to craft transfer attacks (RQ4)
+
+data_view: data/eo_views/yolo/data.yaml  # 11-class names + roles (1:1 taxonomy)
+
+# Passed to Ultralytics `YOLO(model).train(**train)`; see scripts/detector/train_detector.py.
+train:
+  imgsz: 640            # native training / eval resolution
+  epochs: 100
+  patience: 20          # early stop on val mAP
+  batch: 32
+  optimizer: auto       # SGD (Ultralytics auto) for the YOLO family
+  seed: 1337
+  deterministic: true
+  cos_lr: true
+  # --- augmentation (maritime-aware; horizon/orientation preserved) ---
+  mosaic: 1.0
+  close_mosaic: 10      # disable mosaic for the last N epochs (clean convergence)
+  scale: 0.5            # multiscale jitter
+  translate: 0.1
+  fliplr: 0.5
+  flipud: 0.0           # never flip vertically — sky/water orientation is meaningful
+  degrees: 0.0          # no rotation — keep the horizon level
+  perspective: 0.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4

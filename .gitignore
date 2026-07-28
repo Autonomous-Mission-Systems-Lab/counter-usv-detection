@@ -1,0 +1,67 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Ultralytics auto-writes settings.json here on first import
+Ultralytics/
+
+# Editor / local tooling
+.cursor/
+.idea/
+.vscode/
+*.swp
+
+# Env / secrets
+.env
+*.local
+
+# Internal planning docs (not part of the public repo)
+project_planning/
+
+# Data (raw datasets are not tracked; only public contracts / the data card /
+# derived-release checksums are. Annotations, parquets, and splits stay local
+# and are versioned via data/CHECKSUMS.derived.sha256 + data/RELEASE.json.)
+# data/INVENTORY.md is local-only working notes — intentionally not allowlisted.
+data/**
+!data/.gitkeep
+!data/taxonomy.yaml
+!data/HARMONIZATION.md
+!data/DATACARD.md
+!data/DATACARD_EO.md
+!data/DATACARD_TRACKS.md
+!data/CHECKSUMS.derived.sha256
+!data/RELEASE.json
+
+# Model weights / checkpoints (large binaries; release via checksums / hosting)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.ckpt
+*.safetensors
+*.joblib
+checkpoints/
+weights/
+
+# Experiment outputs
+results/**
+!results/.gitkeep
+runs/
+wandb/
+mlruns/
+tensorboard/
+
+# Misc
+*.log

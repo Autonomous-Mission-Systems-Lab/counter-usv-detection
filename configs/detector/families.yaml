@@ -1,0 +1,52 @@
+# Detector baseline roster + transfer-protocol declaration.
+# Single source of truth for (a) which families are trained as baselines and
+# (b) the surrogate / held-out-target split used by the black-box transfer slice.
+#
+# Rationale: >=3 architecturally distinct baselines so downstream attack/defense
+# results are not tied to one detector. Two scales of one CNN family (YOLO11)
+# plus one transformer family (RT-DETR) span the capacity axis and the
+# architecture axis.
+version: 1
+
+families:
+  - name: yolo11s
+    config: configs/detector/yolo11s.yaml
+    group: yolo_small
+    paradigm: cnn_one_stage
+    role: surrogate
+
+  - name: yolo11l
+    config: configs/detector/yolo11l.yaml
+    group: yolo_large
+    paradigm: cnn_one_stage
+    role: surrogate
+
+  - name: rtdetr_l
+    config: configs/detector/rtdetr_l.yaml
+    group: transformer
+    paradigm: detr_transformer
+    role: held_out_target
+
+# Black-box transfer protocol (RQ4 / transfer slice):
+#   * Adversarial examples are crafted ONLY on the surrogate models.
+#   * They are transferred to the held-out target, which the attacker never uses
+#     as a surrogate. This makes it a genuine CNN->transformer cross-architecture
+#     transfer test (the hardest, most informative robustness question).
+#   * The held-out target is still trained and evaluated white-box in the main
+#     clean-mAP results; sequestration only governs attack CRAFTING.
+transfer_protocol:
+  surrogates: [yolo11s, yolo11l]
+  held_out_target: rtdetr_l
+  note: >
+    Do not train attacks against rtdetr_l. Keep its weights out of any
+    surrogate ensemble used for transfer-attack optimization.
+
+# Shared conventions (per-family configs override configs/base.yaml):
+#   * class space & label policy: configs/base.yaml `detector` (11 classes;
+#     ids map 1:1 to canonical taxonomy via data/eo_views/yolo/data.yaml)
+#   * init: COCO-pretrained per family
+#   * input: train and evaluate at the native 640 resolution
+#   * augmentation: train-time mosaic+multiscale ON, eval letterbox-only
+#     (data/HARMONIZATION.md)
+#   * compute: full training on RunPod (docs/RUNPOD.md); laptop = dry-run/smoke only
+

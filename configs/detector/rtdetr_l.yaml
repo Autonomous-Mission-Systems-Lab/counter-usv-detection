@@ -1,0 +1,41 @@
+# Non-YOLO baseline: RT-DETR-l (transformer detector). Overrides configs/base.yaml.
+# Architecture-diversity anchor and the SEQUESTERED held-out transfer target:
+# never used as an attack surrogate, so CNN(YOLO)->transformer transfer stays a
+# genuine black-box test. Still evaluated white-box in the main clean-mAP results.
+# Trains in the same Ultralytics harness (RTDETR(model).train(...)).
+name: rtdetr_l
+extends: ../base.yaml
+
+detector:
+  arch: rtdetr
+  scale: l
+  model: rtdetr-l.yaml     # Ultralytics architecture
+  pretrained: rtdetr-l.pt  # COCO-pretrained init
+  family_group: transformer
+  transfer_role: held_out_target  # NOT a surrogate — sequestered for the transfer slice
+
+data_view: data/eo_views/yolo/data.yaml  # same 11-class view (Ultralytics COCO->internal)
+
+train:
+  imgsz: 640            # native training / eval resolution (multiple of 32)
+  epochs: 100
+  patience: 20          # early stop on val mAP
+  batch: 8              # transformer memory footprint -> smaller batch on a single GPU
+  optimizer: AdamW      # transformers train better with AdamW than SGD
+  lr0: 0.0001
+  seed: 1337
+  deterministic: true
+  cos_lr: true
+  # RT-DETR is sensitive to heavy geometric aug; keep it lighter than the YOLO
+  # configs. Mosaic still closes early for clean convergence.
+  mosaic: 1.0
+  close_mosaic: 10
+  scale: 0.5
+  translate: 0.1
+  fliplr: 0.5
+  flipud: 0.0
+  degrees: 0.0
+  perspective: 0.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4

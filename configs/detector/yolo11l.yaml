@@ -1,0 +1,36 @@
+# Large YOLO baseline (surrogate). Overrides configs/base.yaml.
+# Same family as yolo11s at a larger scale — the intra-family capacity axis.
+name: yolo11l
+extends: ../base.yaml
+
+detector:
+  arch: yolo11
+  scale: l
+  model: yolo11l.yaml     # Ultralytics architecture
+  pretrained: yolo11l.pt  # COCO-pretrained init
+  family_group: yolo_large
+  transfer_role: surrogate  # used to craft transfer attacks (RQ4)
+
+data_view: data/eo_views/yolo/data.yaml  # 11-class names + roles (1:1 taxonomy)
+
+train:
+  imgsz: 640            # native training / eval resolution
+  epochs: 100
+  patience: 20          # early stop on val mAP
+  batch: 16             # larger model -> smaller batch on a single GPU
+  optimizer: auto       # SGD (Ultralytics auto) for the YOLO family
+  seed: 1337
+  deterministic: true
+  cos_lr: true
+  # --- augmentation (maritime-aware; horizon/orientation preserved) ---
+  mosaic: 1.0
+  close_mosaic: 10
+  scale: 0.5
+  translate: 0.1
+  fliplr: 0.5
+  flipud: 0.0
+  degrees: 0.0
+  perspective: 0.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4

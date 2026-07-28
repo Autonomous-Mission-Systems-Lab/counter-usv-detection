@@ -1,0 +1,84 @@
+# Physically-realizable adversarial patch core — frozen geometry + regularizers.
+# Objective-agnostic: shared by evasion (ESR) and disguise (TMSR). Attack losses
+# are supplied by the caller; this file locks size/placement, printability, and
+# the marine-EOT expectation used inside optimization.
+# Digest this file (with marine_eot.yaml) at attack freeze.
+version: 1
+frozen: 2026-07-23
+
+# Harmonized load path (data/HARMONIZATION.md). Patch eval uses letterbox-only
+# imagery (no train augments); only targets meeting the patch floor are eligible.
+eligibility:
+  patch_min_pixels_on_target: 32   # native shortest bbox side; locked floor
+  input_size: 640                  # letterbox canvas (matches detector train/eval)
+  letterbox_pad: 114
+
+# Patch geometry — bounded hull / superstructure placement on the target box.
+geometry:
+  # Square patch side = size_frac * min(bbox_w, bbox_h), then clamped.
+  size_frac: 0.35
+  size_frac_jitter: 0.05          # ± drawn per EOT sample (still within min/max)
+  size_frac_min: 0.20
+  size_frac_max: 0.45
+  # Absolute side clamps in letterboxed pixels (physical-print bound proxy).
+  side_px_min: 16
+  side_px_max: 96
+  # Canonical patch tensor resolution (resized to the placed side at apply time).
+  canonical_side: 64
+  # Placement of patch *center* inside the target bbox (frac of bbox w/h).
+  # Hull / lower-superstructure: horizontally centered, vertically below mid.
+  anchor_x_frac: 0.50
+  anchor_y_frac: 0.62
+  # Placement jitter (frac of bbox) sampled each EOT draw during optimization.
+  place_jitter_frac: 0.08
+  # Soft edge width as a fraction of patch side (alpha ramp); 0 = hard paste.
+  feather_frac: 0.08
+
+# Printability regularizers (Brown et al. / Thys-style physical patch).
+regularization:
+  tv_weight: 0.05                 # total variation (smooth printable texture)
+  nps_weight: 0.01                # non-printability score vs printable palette
+  # Compact printable RGB palette (0–255). NPS = mean_pixel min_c ||p−c||².
+  # Intentionally coarse — a printability prior, not a vendor ICC profile.
+  printable_colors_rgb:
+    - [0, 0, 0]
+    - [255, 255, 255]
+    - [255, 0, 0]
+    - [0, 255, 0]
+    - [0, 0, 255]
+    - [255, 255, 0]
+    - [0, 255, 255]
+    - [255, 0, 255]
+    - [128, 128, 128]
+    - [192, 192, 192]
+    - [128, 0, 0]
+    - [128, 128, 0]
+    - [0, 128, 0]
+    - [128, 0, 128]
+    - [0, 128, 128]
+    - [0, 0, 128]
+    - [255, 165, 0]
+    - [165, 42, 42]
+    - [70, 130, 180]
+    - [34, 139, 34]
+
+# Optimizer defaults (objective-agnostic). Per-attack scripts may override steps/lr.
+optimization:
+  lr: 0.05
+  steps: 200
+  optimizer: adam
+  # Clamp patch pixels to [0, 1] after every step.
+  clamp_min: 0.0
+  clamp_max: 1.0
+  # Init: uniform noise in [init_lo, init_hi].
+  init_lo: 0.25
+  init_hi: 0.75
+  # Marine-EOT Monte-Carlo samples per step (expectation inside optimization).
+  # Ranges come from configs/attacks/marine_eot.yaml — do not retune here.
+  eot_samples: 4
+  marine_eot_config: configs/attacks/marine_eot.yaml
+  # If true, apply a joint marine-EOT draw after compositing each sample.
+  eot_enabled: true
+
+# Reproducibility
+seed: 1337

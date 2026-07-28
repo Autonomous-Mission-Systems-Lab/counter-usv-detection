@@ -1,0 +1,315 @@
+# Counter-USV — Unified label taxonomy & hostile/benign mapping
+# Companion: data/INVENTORY.md, docs/THREAT_MODEL.md, docs/METRICS.md.
+#
+# Purpose
+# One canonical class schema shared by (a) the EO detector's asserted class and
+# (b) the AIS-learned benign-behavior model. The class-kinematics consistency
+# check is only well-defined if the class the detector asserts and the class the
+# behavior model scores are the SAME schema — this file is that bridge.
+#
+# Two axes per canonical class:
+# - role: hostile | benign | non_target (drives the threat-model label)
+# - the fine class itself (drives the kinematic envelope)
+#
+# Design notes
+# - The benign envelope is learned from real AIS tracks (offline only; never a
+# runtime input). Hostile/adaptive trajectories are NOT enumerated from data —
+# they are synthesized at evaluation and never train the scorer.
+# - EO sources are large/commercial/naval vessels; the operationally relevant
+# size class (small craft a hostile USV would mimic) is curated as the `usv` imagery set.
+# - "small_craft" is deliberately its own canonical class: it is the crux
+# ambiguity the threat exploits (visually benign, class-uncertain). Flagged
+# `ambiguous: true` everywhere it appears.
+#
+# Provenance / confidence
+# - SeaShips (6), SMD-Plus (7), ABOShips (11): native class names verified from
+# the source papers/repos (see per-source blocks).
+# - McShips (13 = 6 warship + 7 civilian): the warship-vs-civilian SPLIT is
+# verified; the exact fine sub-class NAMES are behind IEEE/Baidu and are marked
+# `confirm_on_data_contact: true` — read the VOC label map on first download and
+# fill `native` below without changing the canonical mapping.
+
+version: 1
+schema_notes: >
+  Canonical classes are the shared vocabulary. Every EO source category and every
+  AIS ship-type code maps to exactly one canonical class. `role` gives the
+  threat-model axis; `non_target` classes (static aids, unknown) are excluded from
+  the vessel detection/eval pools but kept for provenance and false-alarm bookkeeping.
+
+# ---------------------------------------------------------------------------
+# 1. Canonical class schema
+# ---------------------------------------------------------------------------
+canonical_classes:
+
+  fishing:
+    role: benign
+    description: Fishing vessels (trawlers, small fishing boats).
+    kinematics: Slow transit; loiter/station-keeping over grounds; pattern-bound
+      (repeated passes, low straightness). One of the hardest classes to mimic
+      cheaply — the disguise a hostile fast approach cannot honor.
+
+  sailing:
+    role: benign
+    description: Sailing / sail-assisted craft.
+    kinematics: Moderate speed, wind-dependent; tacking (zig-zag) heading pattern;
+      speed capped well below a powered attack run.
+
+  recreational:
+    role: benign
+    description: Powered pleasure craft — speedboats, motorboats, yachts.
+    kinematics: Fast and erratic; wide speed range. KINEMATICALLY PERMISSIVE — the
+      hardest benign disguise to falsify by motion alone (an intrinsically fast
+      class). Expect this to be the weakest defense class (tracked via per-class
+      discriminability in the evaluation metrics).
+    weak_disguise: true
+
+  passenger_ferry:
+    role: benign
+    description: Passenger ships, ferries, cruise ships, fast ferries (HSC).
+    kinematics: Scheduled, repeatable routes; moderate-to-fast steady transit;
+      regular terminals. Route regularity is a strong benign signal.
+
+  cargo_merchant:
+    role: benign
+    description: Cargo, container, bulk carrier, general cargo, tanker, ore carrier.
+    kinematics: Slow, steady, lane-following (traffic-separation schemes); large;
+      low turn rate. Size and lane adherence make this hard to mimic with a small
+      craft, but a small craft is unlikely to *claim* this class.
+
+  working_service:
+    role: benign
+    description: Tugs, pilot vessels, port tenders, SAR, law-enforcement, dredgers,
+      towing, anti-pollution — working craft with task-bound motion.
+    kinematics: Slow; station-keeping; localized task loops. Distinct enough to
+      matter for false alarms; kept separate rather than folded into cargo/other.
+
+  small_craft:
+    role: benign
+    description: Small benign-looking craft whose fine class is genuinely uncertain
+      at range (generic "boat", kayak, misc small boat, Class-B unspecified).
+    kinematics: Broad/overlapping; this is where visual benignity and kinematic
+      ambiguity coincide.
+    ambiguous: true # THE CRUX: the threat model's target disguise space
+    note: >
+      This is the class a hostile USV most plausibly hides in. Its kinematic
+      envelope is the loosest, so the defense's leverage here is the research
+      question, not an assumption. Do not silently merge into recreational/fishing.
+
+  benign_unspecified:
+    role: benign
+    description: Civilian/benign vessel with no fine class label — the bucket for
+      coarse-labeled sources (McShips `civilianship`).
+    kinematics: None attached. No AIS ship-type or kinematic envelope. Used only for
+      the hostile/benign axis and as the detector's generic-civilian node; excluded
+      from class-conditional kinematic scoring.
+    coarse_only: true
+
+  military:
+    role: hostile
+    description: Warships / military vessels — the LARGE hostile-appearance pole.
+    kinematics: Not modeled from benign AIS. At runtime a hostile craft tries to
+      AVOID this label (targeted hostile->benign misclassification); military
+      appearance is the pre-disguise ground truth, not a benign envelope.
+    note: >
+      No benign behavior model is learned for this class. Hostile/adaptive
+      trajectories are synthesized at evaluation and never used in scorer
+      training. AIS "military ops" (35) exists but is not a benign envelope.
+
+  usv:
+    role: hostile
+    description: Small unmanned surface vehicle — the SMALL hostile class, the
+      operationally relevant threat platform (distinct from the large `military`
+      pole). Curated from a provenance-tracked USV imagery set.
+    kinematics: Not modeled from benign AIS. Used ONLY on the EO/appearance axis to
+      give the detector baseline a fielded-representative undisguised-USV recognition
+      capability. The hostile trajectory it executes at eval is synthesized, never
+      learned.
+    note: >
+      IMAGE/APPEARANCE AXIS ONLY. USV imagery trains the EO detector baseline so it
+      can recognize an *undisguised* USV (as fielded systems do); it NEVER enters the
+      kinematic consistency scorer (which scores tracks, not pixels) and hostile
+      trajectories stay synthesized — so the benign-behavior model remains real-data
+      only and free of by-construction circularity. Under disguise/patch the detector
+      labels the craft as a benign class (the attack); that is the case the
+      class-kinematics check is designed to catch. Real imagery preferred;
+      generated frames only as clearly-flagged augmentation. See docs/THREAT_MODEL.md
+      (EO-baseline note) and data/INVENTORY.md.
+
+  static_aid:
+    role: non_target
+    description: Buoys, seamarks, aids-to-navigation — not vessels.
+    kinematics: Static / drift-only. Excluded from the vessel detection & consistency
+      pools; retained for provenance and to characterize static false alarms.
+
+  unknown_other:
+    role: non_target
+    description: Unclassifiable / miscellaneous / "others".
+    kinematics: N/A. Excluded from class-conditional modeling; provenance only.
+
+# Convenience roll-up (derived from `role` above; kept explicit for scripts).
+hostile_benign_axis:
+  hostile: [military, usv] # military = large pole; usv = small threat platform (EO/appearance axis only)
+  benign: [fishing, sailing, recreational, passenger_ferry, cargo_merchant, working_service, small_craft, benign_unspecified]
+  non_target: [static_aid, unknown_other]
+
+# ---------------------------------------------------------------------------
+# 2. EO source -> canonical mappings
+# `native` lists each source's own category strings; values are canonical class.
+# ---------------------------------------------------------------------------
+eo_sources:
+
+  seaships:
+    # SeaShips (Shao et al., 2018). 6 civilian classes; verified from the paper.
+    # All benign; no military and no dedicated small-craft class.
+    verified: true
+    native:
+      "ore carrier": cargo_merchant
+      "bulk cargo carrier": cargo_merchant
+      "general cargo ship": cargo_merchant
+      "container ship": cargo_merchant
+      "passenger ship": passenger_ferry
+      "fishing boat": fishing
+    notes: Shore-camera scenes, mostly one annotation/image. Sole clean source of
+      an explicit "fishing" EO label.
+
+  smd_plus:
+    # SMD-Plus (Kim et al., JMSE 2022) — cleaned/merged Singapore Maritime Dataset.
+    # 7 classes; verified. "Boat" already merges original SMD boat+speed_boat.
+    verified: true
+    native: # exact ObjectType strings from ObjectGT .mat
+      "Boat": small_craft # merged boat + speed boat -> ambiguous small
+      "Vessel/ship": cargo_merchant # generic large vessel; refine if sub-labeled
+      "Ferry": passenger_ferry
+      "Kayak": small_craft
+      "Buoy": static_aid
+      "Sail boat": sailing
+      "Other": unknown_other
+    notes: >
+      On-shore video subset (used both as detection scenes as detection scenes and for the
+      video-derived non-cooperative tracks for video tracks). Labels live in the ObjectGT
+      `.mat` (structXML per-frame array; fields ObjectType + BB = [x,y,w,h], where
+      x/y is the top-left and may be negative when a box runs off-frame). Class
+      strings are exactly as keyed above — note "Sail boat" (with a space) and
+      "Other" (singular). "Vessel/ship" is coarse (most large vessels) — revisit if
+      finer labels are recoverable. No explicit fishing class (fishing craft fall
+      under Boat/Vessel).
+
+  aboships:
+    # ABOShips (Iancu et al., Remote Sensing 2021). 11 categories; verified against
+    # the on-disk label file (Labels/Vesibussi_Labels.csv, 41,967 annotations over
+    # 9,880 images). Class strings are Capitalized exactly as below (col `class`).
+    verified: true
+    native:
+      "Cargoship": cargo_merchant
+      "Cruiseship": passenger_ferry
+      "Passengership": passenger_ferry
+      "Ferry": passenger_ferry
+      "Militaryship": military
+      "Motorboat": recreational
+      "Boat": small_craft
+      "Miscboat": small_craft
+      "Sailboat": sailing
+      "Seamark": static_aid
+      "Miscellaneous": unknown_other
+    notes: >
+      Shipboard/inshore-offshore. Supplies a second `Militaryship` (hostile) source
+      besides McShips (4,128 annotations), plus small-craft diversity. No explicit
+      fishing class. CSV columns: filename,width,height,class,xmin,xmax,ymin,ymax —
+      `width`/`height` are the BOX size (not image size), and box order is
+      xmin,xmax,ymin,ymax; image dims must be read from the PNGs at convert time
+      . Images live under Seaships/<YYYYMMDD>/<filename>.png (authors' folder
+      name); ~839 images are unlabeled background frames.
+
+  mcships:
+    # McShips (Zheng & Zhang, ICME 2020). The paper describes 13 fine classes, but
+    # the public 9k "lite" VOC subset we use is labeled ONLY at the coarse level:
+    # two object classes, warship vs civilianship (verified on disk: 7,996 images).
+    verified: true
+    scheme: coarse # warship / civilianship only; no fine 13-class labels
+    native:
+      "warship": military
+      "civilianship": benign_unspecified
+    notes: >
+      Primary driver of the hostile/benign axis. Object counts: civilianship 5,949,
+      warship 5,382 (over 7,996 images; VOC train/val/test splits in ImageSets/Main).
+      NOTE: the VOC <owner><name> field is 'xiaoxianyu' (the dataset author's handle)
+      — that is metadata, NOT an object class; at convert time match only
+      <object><name>. Civilians are unlabeled at the fine level here, so McShips
+      civilians map to `benign_unspecified` (hostile/benign axis + detector's
+      generic-civilian node only; no fine kinematic class). Warships give the clean
+      hostile examples.
+
+# ---------------------------------------------------------------------------
+# 3. AIS ship-type code -> canonical mapping (the EO<->AIS alignment)
+# ITU-R M.1371 "type of ship and cargo type" first-digit / code ranges.
+# This is what makes the consistency check well-defined: the behavior model's
+# class-conditional envelopes are keyed on these codes, mapped to the SAME
+# canonical classes the EO detector asserts.
+# ---------------------------------------------------------------------------
+ais_ship_type:
+  # Exact single codes
+  by_code:
+    30: fishing
+    31: working_service # towing
+    32: working_service # towing (length > 200m / breadth > 25m)
+    33: working_service # dredging / underwater ops
+    34: working_service # diving ops
+    35: military # military ops (hostile axis; not a benign envelope)
+    36: sailing
+    37: recreational # pleasure craft
+    50: working_service # pilot vessel
+    51: working_service # search and rescue
+    52: working_service # tug
+    53: working_service # port tender
+    54: working_service # anti-pollution equipment
+    55: working_service # law enforcement
+    58: working_service # medical transport
+    59: unknown_other # non-combatant / RR resolution 18
+    0: unknown_other # not available / default
+  # Code ranges (first digit families)
+  by_range:
+    "40-49": passenger_ferry # high-speed craft (HSC) — mostly fast ferries
+    "60-69": passenger_ferry # passenger
+    "70-79": cargo_merchant # cargo
+    "80-89": cargo_merchant # tanker
+    "90-99": unknown_other # other type
+  notes: >
+    (1) AIS carries no "small_craft" code — small benign craft self-report as 37
+    (pleasure), 30 (fishing), or 0/unspecified, and many Class-B units under-report.
+    So the EO `small_craft` class has no clean AIS counterpart; its benign envelope
+    is approximated from the 30/36/37 mix and validated against the video-derived
+    non-cooperative tracks (the video non-cooperative check and real-track validation). This is the carriage-bias limitation,
+    surfaced here rather than hidden.
+    (2) Ship-type is self-reported and error-prone; cleaning/among-class error
+    cadence/feature handling is done at SMD video-track ingestion, not here.
+    (3) HSC (40-49) spans fast ferries and fast utility craft; mapped to
+    passenger_ferry as the dominant case — revisit if a region skews otherwise.
+
+# ---------------------------------------------------------------------------
+# 4. Ambiguity register (explicit, explicit register)
+# ---------------------------------------------------------------------------
+ambiguous_classes:
+  - class: small_craft
+    why: Visually benign + kinematically loose + no clean AIS code. The exact
+      disguise space the threat model targets; the defense's leverage here is the
+      research question.
+  - class: recreational
+    why: Intrinsically fast, so motion alone poorly falsifies the disguise. Expected
+      weakest defense class (plan 6.3).
+  - mapping: "SMD-Plus 'Vessel/ship'"
+    why: Coarse large-vessel bucket mapped to cargo_merchant; may absorb passenger
+      or working craft. Refine only if finer labels are recoverable.
+  - mapping: "AIS HSC 40-49"
+    why: Fast ferry vs. fast utility ambiguity; defaulted to passenger_ferry.
+
+# ---------------------------------------------------------------------------
+# 5. Open items carried forward
+# ---------------------------------------------------------------------------
+open_items:
+  - Fill mcships.native (13 strings) from the VOC label map on first download;
+    keep warship->military, civilian->benign fine class.
+  - Confirm whether any EO source distinguishes fishing beyond SeaShips; if not,
+    document that EO "fishing" appearance is SeaShips-dominated (a coverage note for
+    the data card, the data card).
+  - Decide, in the curated usv set, which native small-vessel instances (SMD-Plus Boat/Kayak,
+    ABOShips boat/miscboat/motorboat) enter the curated small-craft subset.

@@ -1,0 +1,107 @@
+# Marine expectation-over-transformation (marine-EOT) — frozen ranges & severity.
+# Shared by: (a) Monte-Carlo expectation inside patch optimization, and
+# (b) eval-time per-axis severity sweeps (RQ1 robustness condition).
+# Do not retune casually — attack robustness and the marine-EOT eval slice
+# must share one definition (digest this file at attack freeze).
+version: 1
+frozen: 2026-07-23
+
+# Discrete severity ladder (shared by every axis). L0 = identity for that axis.
+severity_levels: [L0, L1, L2, L3, L4]
+
+# Axes match docs/THREAT_MODEL.md / docs/METRICS.md marine-EOT list.
+# `sample` = continuous range drawn uniformly (or as noted) for EOT expectation.
+# `severity` = frozen discrete values for the per-axis eval sweep (L0..L4).
+axes:
+  scale:
+    # Apparent size / range variation. 1.0 = unchanged; <1 zooms out (craft smaller).
+    description: isotropic resize about image center, pad/crop back to original size
+    sample: {min: 0.70, max: 1.30}
+    severity: {L0: 1.00, L1: 0.90, L2: 0.80, L3: 0.70, L4: 0.60}
+    # Sweep emphasizes shrinkage (harder patch) plus one mild zoom-in at L1 via
+    # the sample range; discrete ladder is zoom-out only for a clean severity curve.
+
+  rotation:
+    # Camera roll / slight craft yaw in the image plane (degrees, CCW positive).
+    description: in-plane rotation about image center
+    sample: {min: -15.0, max: 15.0}
+    severity: {L0: 0.0, L1: 5.0, L2: 10.0, L3: 15.0, L4: 20.0}
+
+  motion_blur:
+    # Kernel length in pixels; direction sampled uniformly on [0, 180) at EOT time.
+    description: linear motion blur (wake / camera motion)
+    sample: {length_min: 1, length_max: 15, angle_deg_min: 0.0, angle_deg_max: 180.0}
+    severity:
+      L0: {length: 1, angle_deg: 0.0}      # length 1 = identity
+      L1: {length: 3, angle_deg: 30.0}
+      L2: {length: 7, angle_deg: 45.0}
+      L3: {length: 11, angle_deg: 60.0}
+      L4: {length: 15, angle_deg: 90.0}
+
+  glare:
+    # Specular sun-glint overlay intensity in [0, 1]; position jittered at sample time.
+    description: soft elliptical glare (sun glint on water / hull)
+    sample:
+      intensity_min: 0.0
+      intensity_max: 0.60
+      radius_frac_min: 0.15   # ellipse radii as fraction of min(H, W)
+      radius_frac_max: 0.45
+      # center offset from image center, as fraction of (W, H)
+      center_jitter_frac: 0.35
+    severity:
+      L0: {intensity: 0.00, radius_frac: 0.25, cx_frac: 0.50, cy_frac: 0.40}
+      L1: {intensity: 0.15, radius_frac: 0.25, cx_frac: 0.55, cy_frac: 0.35}
+      L2: {intensity: 0.30, radius_frac: 0.30, cx_frac: 0.60, cy_frac: 0.35}
+      L3: {intensity: 0.45, radius_frac: 0.35, cx_frac: 0.55, cy_frac: 0.30}
+      L4: {intensity: 0.60, radius_frac: 0.40, cx_frac: 0.50, cy_frac: 0.30}
+
+  spray:
+    # Partial occlusion by spray / mist. coverage = expected fraction of pixels touched.
+    description: soft white spray blobs (wake spray / partial occlusion)
+    sample:
+      coverage_min: 0.00
+      coverage_max: 0.35
+      n_blobs_min: 3
+      n_blobs_max: 12
+      # Prefer lower image half (waterline / bow spray).
+      y_bias: lower_half
+    severity:
+      L0: {coverage: 0.00, n_blobs: 0}
+      L1: {coverage: 0.08, n_blobs: 4}
+      L2: {coverage: 0.15, n_blobs: 6}
+      L3: {coverage: 0.25, n_blobs: 9}
+      L4: {coverage: 0.35, n_blobs: 12}
+
+  grazing_angle:
+    # Shore near-waterline foreshortening. strength 0 = identity; 1 = strong squash.
+    # Implemented as a perspective warp that pulls the top edge inward and
+    # compresses vertical extent (low camera elevation).
+    description: perspective foreshortening (grazing / low-elevation viewpoint)
+    sample: {strength_min: 0.00, strength_max: 0.55}
+    severity: {L0: 0.00, L1: 0.15, L2: 0.30, L3: 0.45, L4: 0.55}
+
+  sea_state:
+    # Background compositing with a procedural sea texture. mix in [0, 1] blends
+    # the lower portion of the frame toward a wave field (Douglas-scale proxy).
+    description: procedural sea-texture blend into the waterline / lower frame
+    sample:
+      mix_min: 0.00
+      mix_max: 0.55
+      band_top_frac_min: 0.35   # y where sea band begins (fraction of H)
+      band_top_frac_max: 0.55
+    severity:
+      L0: {mix: 0.00, band_top_frac: 0.45, ripple_amp: 0.00, wave_freq: 1.0}
+      L1: {mix: 0.12, band_top_frac: 0.50, ripple_amp: 0.08, wave_freq: 2.0}
+      L2: {mix: 0.25, band_top_frac: 0.45, ripple_amp: 0.14, wave_freq: 3.0}
+      L3: {mix: 0.40, band_top_frac: 0.40, ripple_amp: 0.20, wave_freq: 4.0}
+      L4: {mix: 0.55, band_top_frac: 0.35, ripple_amp: 0.28, wave_freq: 5.0}
+
+# Joint EOT expectation defaults (patch optimization).
+expectation:
+  n_samples: 10                 # Monte-Carlo samples per forward (tunable at train time)
+  apply_all_axes: true          # sample every axis jointly each draw
+  # Border fill for geometric warps; matches letterbox pad (HARMONIZATION).
+  border_value: 114
+
+# Reproducibility
+seed: 1337

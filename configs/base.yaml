@@ -1,0 +1,89 @@
+# Base configuration. Experiment configs override keys from this file.
+# Conventions: every run sets `seed`, writes under `results/<run_name>/`, and logs to tensorboard.
+
+seed: 1337
+run_name: base
+results_dir: results
+
+data:
+  root: data
+  annotations_master: data/annotations/coco_master.json # produced in COCO master conversion
+  # Viewpoint policy (decided 2026-07-10, enforced in the split): ABOShips (onboard/moving-
+  # vessel viewpoint) is TRAIN-eligible for small-craft diversity, but the operational
+  # eval is SHORE-only (operational_viewpoint=True: seaships, smd). ABOShips is a
+  # separate cross-viewpoint transfer stratum, firewalled from every eval split; a
+  # with/without-ABOShips ablation quantifies the gap.
+  eval_operational_sources: [seaships, smd, usv] # headline shore-operational eval pool (viewpoint=shore)
+  train_auxiliary_sources: [aboships] # train-only; never in eval splits
+  # Harmonization contract (harmonization, see data/HARMONIZATION.md): native resolution
+  # retained on disk, letterboxed to `input_size` at load time (centered pad = 114);
+  # never downscale to the smallest image. Boxes stay in native coords in the master and
+  # are remapped at load.
+  input_size: 640 # evaluate 1280 for small-target recall
+  letterbox: true
+  letterbox_pad: 114 # neutral grey fill (also used for the SeaShips overlay mask)
+  # Pixels-on-target floors LOCKED in the harmonization spec (native shortest bbox side; non-destructive flags).
+  det_min_pixels_on_target: 8 # detector-eligible (67,397/71,501 = 94.3%)
+  patch_min_pixels_on_target: 32 # patch-eligible only (43,761/71,501 = 61.2%)
+  mask_overlay_sources: [seaships] # burned-in timestamp/camera-id bands, non-destructive
+  # Locked SeaShips overlay bands on the native 1920×1080 release (half-open row
+  # intervals). Scaled proportionally if a frame arrives at a different size.
+  # Measured 2026-07-16 from a 30-image aggregate of text-edge / extreme-luminance.
+  seaships_overlay_bands:
+    native: [1920, 1080]
+    top: [0, 110]       # timestamp
+    bottom: [980, 1080] # camera ID
+  # Real trajectory corpus for the benign-behavior model (AIS + video track curation).
+  tracks_ais: data/tracks/tracks_ais.parquet # AIS-derived benign tracks (offline only)
+  tracks_video: data/tracks/tracks_video.parquet # SMD video non-cooperative tracks: scale-normalized
+                                            # image-plane features only (calibration gate FAILED — no
+                                            # metric world frame). Held-out sensitivity pool, NOT pooled
+                                            # with AIS; do not compare its numbers to AIS metric envelopes.
+
+kinematics:
+  # Class-conditional benign-behavior model.
+  # Feature contract (names, aliases, units, window policy, exclusions):
+  #   configs/defense/scorer_features.yaml
+  # Model feature *subset* (deduped core / course used at fit):
+  #   configs/defense/behavior_model.yaml → features
+  feature_spec: configs/defense/scorer_features.yaml
+  # Cadence / window knobs also live in scorer_features.yaml (extraction reads
+  # that file). Restated here only as project-wide defaults for discoverability.
+  resample_seconds: 30 # track resampling cadence (AIS). SMD video is resampled to 3 Hz separately.
+  observation_window_s: 300 # default history for a consistency decision; swept in eval (time-to-flag).
+                             # NB: exceeds every SMD clip (~7-20 s) — SMD informs only the short end of the time-to-flag curve.
+  # range_to_shore intentionally NOT included: no such feature in the corpus (geography ≠
+  # behavior; no range-to-shore computed). See data/HARMONIZATION.md B.4 /
+  # configs/defense/scorer_features.yaml.
+  scorer: oneclass # trained on real benign tracks only; no hostile data in training
+  benign_corpus: data/behavior/benign_train_manifest.parquet
+
+train:
+  device: auto # auto → cuda:0 / mps / cpu (see scripts/detector/train_detector.py); prefer CUDA on RunPod
+  batch_size: 16
+  epochs: 100
+  # multi-scale + mosaic augmentation enabled per HARMONIZATION contract
+  multiscale: true
+  mosaic: true
+
+detector:
+  # Baseline roster + surrogate/held-out-target transfer split: configs/detector/families.yaml
+  # Per-family configs (override this file): configs/detector/{yolo11s,yolo11l,rtdetr_l}.yaml
+  family: yolo # default family group; per-family configs set arch/scale/weights
+  weights: null # per-family COCO-pretrained init is set in the family config
+  # --- Class space & label policy (LOCKED) ----------------------------------
+  # Trained class space = canonical taxonomy classes (data/taxonomy.yaml) that
+  # carry >=1 EO instance. Class ids map 1:1 to canonical names (via the export
+  # data.yaml `names`) so the detector's asserted class flows straight into the
+  # downstream class-kinematics consistency check without a re-map table.
+  exclude_classes: [working_service] # 0 EO boxes (AIS-only class); no detector head slot
+  # non_target classes (static_aid = buoys, unknown_other = misc) ARE trained as
+  # explicit detection classes so the detector localizes/labels them rather than
+  # learning "floating object = background"; this suppresses small_craft/usv false
+  # positives. Downstream they carry role=non_target and are never scored on the
+  # hostile/benign axis. Set `drop` for the vessel-only (small-craft focus) ablation.
+  non_target_policy: keep # keep | drop
+
+logging:
+  tensorboard: true
+  log_every: 50

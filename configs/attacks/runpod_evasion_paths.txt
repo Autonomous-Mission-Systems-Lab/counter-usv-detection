@@ -1,0 +1,20 @@
+# Paths relative to the repo root for an evasion (ESR) RunPod run.
+# Used by scripts/attacks/sync_evasion_runpod.sh.
+#
+# Assumes the EO train bundle is ALREADY on the pod (scripts/detector/sync_eo_train_bundle.sh
+# + setup_runpod_eo.sh). This list is the incremental overlay: attack code + frozen
+# surrogate weights. ~70 MB of weights + a few MB of code — not the 10 GB imagery.
+#
+# Surrogates only (transfer protocol): do NOT craft on rtdetr_l. Sync yolo11s
+# (default) and optionally yolo11l for a second white-box family.
+
+configs/
+scripts/
+src/
+docs/RUNPOD.md
+docs/TRANSFER_PROTOCOL.md
+docs/METRICS.md
+docs/THREAT_MODEL.md
+results/detector_baselines/FROZEN.json
+results/detector_baselines/yolo11s/weights/best.pt
+results/detector_baselines/yolo11l/weights/best.pt

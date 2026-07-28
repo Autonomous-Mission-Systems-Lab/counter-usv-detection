@@ -1,0 +1,13 @@
+# Incremental overlay for disguise (TMSR) RunPod runs — same EO bundle
+# prerequisite as evasion. Syncs attack code + surrogate weights.
+
+configs/
+scripts/
+src/
+docs/RUNPOD.md
+docs/TRANSFER_PROTOCOL.md
+docs/METRICS.md
+docs/THREAT_MODEL.md
+results/detector_baselines/FROZEN.json
+results/detector_baselines/yolo11s/weights/best.pt
+results/detector_baselines/yolo11l/weights/best.pt

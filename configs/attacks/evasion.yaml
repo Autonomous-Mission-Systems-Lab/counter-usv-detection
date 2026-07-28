@@ -1,0 +1,52 @@
+# Evasion attack (ESR) — the objective + eval thresholds layered on the shared
+# patch core (configs/attacks/patch.yaml) and marine-EOT recipe
+# (configs/attacks/marine_eot.yaml). Geometry / printability / EOT expectation
+# are NOT redefined here — this file only fixes the evasion objective and the
+# success-scoring thresholds so ESR is reproducible. Digest all three at freeze.
+version: 1
+frozen: 2026-07-23
+
+# Which detector the patch is optimized against. White-box = this same family;
+# grey-box default and black-box transfer are handled by the access-level step.
+# The held-out transfer target (rtdetr_l) is refused for crafting in code.
+surrogate:
+  family: yolo11s          # default crafting surrogate (small CNN)
+  target_class: usv        # true (hostile) class we suppress
+  device: auto             # auto → cuda:0 on RunPod, mps/cpu on laptop; override
+                           # with --device 0 (or cuda) on GPU hosts
+
+# Evasion objective: push the target-class confidence of every prediction that
+# overlaps the target box below the detection threshold (full non-detection).
+objective:
+  # Anchors count toward the loss if their (decoded) center falls inside the
+  # target box, dilated by this fraction of the box side (captures near-edge
+  # predictions the NMS winner may come from).
+  target_pad_frac: 0.15
+  # Smooth-max temperature for aggregating candidate-anchor confidences
+  # (loss = (1/T)·logsumexp(T·conf)); higher T ≈ hard max over anchors.
+  smoothmax_temperature: 20.0
+  # If no anchor center lands in the (dilated) box, fall back to the global max
+  # target-class confidence so the loss is never degenerate.
+  fallback_global_max: true
+
+# Optimizer overrides (fall back to patch.yaml when null).
+optimization:
+  steps: 150
+  lr: 0.05
+
+# Success scoring (ESR). Report these thresholds with every ESR number.
+# A "target detection" = a prediction of `target_class` with score >= conf_threshold
+# whose box IoU with the ground-truth target >= iou_match. ESR success = the
+# instance is detected on the CLEAN canvas but NOT on the attacked canvas.
+evaluation:
+  conf_threshold: 0.25     # detection confidence floor (Ultralytics default)
+  iou_match: 0.5           # IoU(pred, GT target) to call it "the target"
+  nms_iou: 0.7             # NMS IoU used by the hard detector at eval
+  # Marine-EOT survival: sweep each axis over its severity ladder (L0 = identity)
+  # and report ESR per (axis, level). L0 is the base ESR (no transform).
+  severity_axes: [scale, rotation, motion_blur, glare, spray, grazing_angle, sea_state]
+  severity_levels: [L0, L1, L2, L3, L4]
+  marine_eot_config: configs/attacks/marine_eot.yaml
+
+# Reproducibility (patch init + EOT draws + placement jitter).
+seed: 1337
