@@ -1,0 +1,160 @@
+# Engagement geometry — shared defended-asset definition for the class-conditional
+# behavior scorer's asset-relative feature family and the adversary motion model.
+#
+# Rationale (static geography vs. evolving relationship to a defended point):
+#   docs/ENGAGEMENT_GEOMETRY.md
+version: 1
+frozen: 2026-07-29
+
+# ---------------------------------------------------------------------------
+# Coordinate / units contract (matches AIS world-frame tracks)
+# ---------------------------------------------------------------------------
+frame:
+  crs: WGS84                    # lat/lon decimal degrees
+  range_units: nm               # nautical miles (1 nm = 1852 m)
+  bearing_units: deg            # degrees clockwise from true north [0, 360)
+  speed_units: kn               # knots (already the track SOG contract)
+  time_units: s                 # Unix epoch UTC on point streams
+
+# ---------------------------------------------------------------------------
+# Defended asset
+# ---------------------------------------------------------------------------
+# A single named point the defense is protecting. Runtime: operator-supplied.
+# Eval / FAR validation: sampled from the placement policy below — never a
+# single hand-picked coordinate as the headline FAR.
+asset:
+  representation: point         # lat/lon; no extent model in v1
+  fields: [asset_id, lat, lon, placement_class, port_region]
+  # Association of contacts to this asset is out of scope (track is given);
+  # see configs/defense/pipeline.yaml → association.
+
+# ---------------------------------------------------------------------------
+# Engagement / detection annulus (relative to the asset)
+# ---------------------------------------------------------------------------
+# Contacts outside max_range_nm are unscored for geometry features (abstain —
+# never impute). Inside min_range_nm the contact is in the terminal zone;
+# geometry features still compute, but FAR validation reports that band
+# separately (sparse real traffic).
+annulus:
+  min_range_nm: 0.25            # inside this: terminal / pier-side
+  max_range_nm: 6.0             # beyond this: geometry features abstain
+  # Primary eval band used for headline FAR / DDR cells (pilot used ≤6 nm
+  # inbound legs; close-range sensitivity reported at 1 nm and 2 nm).
+  primary_band_nm: [0.5, 6.0]
+  close_range_nm: [0.5, 1.0, 2.0]
+
+# ---------------------------------------------------------------------------
+# Inbound-leg definition
+# ---------------------------------------------------------------------------
+# An inbound leg is the contiguous point sequence ending at the track's
+# closest approach to the asset (CPA), restricted to the annulus.
+inbound_leg:
+  cpa_definition: min_range_in_annulus
+  require_points_before_cpa: 3  # need history to estimate closing / bearing rate
+  min_points: 4
+  # Closing rate = −Δrange / Δt (positive = approaching). Bearing from asset
+  # to contact; stability = std of unwrapped bearing increments (deg).
+  closing_rate_units: kn        # nm/h ≡ knots
+  # Cadence note: AIS points are ~60 s thinned. Bearing-rate estimates are
+  # coarse; document coverage and do not invent denser samples at score time.
+  expected_point_cadence_s: 60
+
+# ---------------------------------------------------------------------------
+# Asset-placement sampling policy (FAR validation — step that consumes this)
+# ---------------------------------------------------------------------------
+# FAR for the geometry arm is a *distribution over placements*, never a single
+# asset. 
+placement_policy:
+  report_as: distribution       # never headline a single-asset FAR
+  n_ports: 5                    # distinct coastal regimes (not redundant coasts)
+  placements_per_port: 4        # one of each archetype below, when feasible
+  pairing_radius_nm: 100        # track mean must be within this of seed approx
+                                # before encounter pairing is attempted
+  materialize_search_nm: 40     # point-cloud radius used to derive placements
+  # Seed regions = dense AIS cells chosen for *traffic-regime* diversity
+  # (recreational Class-B, working/ferry Class-A, Atlantic commercial,
+  # Pacific recreational+ferry, CA approaches) — not geographic coverage
+  # for its own sake.
+  # Exact lat/lon for each placement are materialized from the corpus
+  # (berth / anchorage dwell clusters, seaward offset, fairway median) —
+  # not hard-coded here — so the policy stays portable across corpora.
+  seed_port_regions:
+    - {id: miami_approach,    approx_lat: 26.0, approx_lon: -80.2,  note: "SE Florida recreational / Class-B heavy"}
+    - {id: mississippi_delta, approx_lat: 29.2, approx_lon: -90.2,  note: "Gulf working / ferry / Class-A heavy"}
+    - {id: puget_sound,       approx_lat: 47.6, approx_lon: -122.4, note: "Pacific NW recreational + ferry"}
+    - {id: ny_harbor,         approx_lat: 40.7, approx_lon: -74.0,  note: "Atlantic NE commercial / dense approaches"}
+    - {id: la_san_pedro,      approx_lat: 33.7, approx_lon: -118.2, note: "Southern CA approaches / San Pedro"}
+
+  # Each placement class names a defended-asset *archetype* — the kind of thing
+  # that is actually attacked — not a geometric offset for its own sake. Classes
+  # carry a `role`: `fit` placements are realistic assets and supply the benign
+  # envelope training population; `far_only` placements are scored at false-alarm
+  # validation but never fit.
+  placement_classes:
+    berth_approach:
+      role: fit
+      represents: >
+        Ship alongside a pier / quay inside the harbour (the USS Cole and
+        Sevastopol-berth case). The most common static counter-USV target.
+      derivation: >
+        Median position of long-dwell stationary vessels (SOG < moored_sog_kn
+        for >= moored_dwell_h) inside the port cell, nudged to the water side.
+        Most contacts in the annulus are moored and abstain; the usable
+        population is the moving traffic transiting past.
+      moored_sog_kn: 0.5
+      moored_dwell_h: 6.0
+    anchorage:
+      role: fit
+      represents: >
+        Ship at anchor in a designated holding area (repeatedly attacked in the
+        Red Sea / Gulf of Aden). Static, in open water, off the transit lane.
+      derivation: >
+        Offshore cluster of long-dwell stationary vessels — same dwell test as
+        berth_approach but outside the harbour interior, >= anchorage_min_sep_nm
+        from the berth cluster.
+      anchorage_min_sep_nm: 1.0
+    offshore_terminal:
+      role: far_only
+      represents: >
+        Isolated seaward facility — SPM buoy, offshore platform, fuel terminal.
+        Tests whether geometry still separates where benign traffic is sparse.
+      derivation: >
+        Seaward along the dominant approach bearing from the fairway centroid,
+        away from the primary lane.
+      seaward_offset_nm: 4.0
+    fairway_stress:
+      role: far_only
+      represents: >
+        NOT a real asset — nothing is permanently moored in a navigation
+        channel. Retained deliberately as the pessimistic false-alarm bound:
+        benign traffic has every legitimate reason to pass within a few hundred
+        metres, so it is the hardest placement at which to claim geometric
+        separation. Reported as a stress case, never as the headline asset.
+      derivation: >
+        Median position of *moving* traffic (SOG >= moving_sog_kn) inside the
+        densest cell of the port region.
+      moving_sog_kn: 5.0
+
+  # Which placements supply the benign envelope training population. FAR is
+  # reported across every class above; only these are fit.
+  fit_population: [berth_approach, anchorage]
+
+  # Reject placements that land ashore or in degenerate empty water. 
+  # Materialized by the FAR runner.
+  validity_gates:
+    require_over_water: true
+    min_inbound_legs_in_annulus: 50   # else placement is under-powered / report-only
+    reject_if_min_observed_range_nm_gt: 3.5  # nothing came close → degenerate
+
+# ---------------------------------------------------------------------------
+# Consumer contracts (who reads this file)
+# ---------------------------------------------------------------------------
+consumers:
+  feature_extraction: configs/defense/scorer_features.yaml   # v2 asset-relative block
+  # Materialize once → frozen placements table (digest); shared by train
+  # encounter pairing (role=fit archetypes) and FAR sweep (full grid).
+  placements_materializer: scripts/defense/materialize_placements.py
+  geometry_extraction: scripts/defense/extract_geometry_features.py
+  far_validation: scripts that sweep the same frozen placements table
+  motion_model: counterusv.attacks.kinematics                # emits tracks vs named asset
+  pipeline: configs/defense/pipeline.yaml                    # association stays "given"

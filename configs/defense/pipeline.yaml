@@ -1,0 +1,42 @@
+# Defense pipeline — detector / oracle → ConsistencyScorer → operating-point decision.
+# Contact↔track association is assumed given (radar/EO fusion); see association note.
+version: 1
+frozen: 2026-07-31
+
+# Default FAR operating point (matches behavior_model calibration default).
+far_target: 0.05
+
+# Feature arm served by this pipeline.
+# kinematics_only = frozen Phase-3 envelopes (results/behavior_model/).
+# kinematics_geometry = extended arm (results/behavior_model_geometry/).
+feature_arm: kinematics_only
+
+# Per-arm freeze manifests. `scorer.freeze_path` is the default when the
+# selected arm has no override below.
+arms:
+  kinematics_only:
+    freeze_path: results/behavior_model/FROZEN.json
+  kinematics_geometry:
+    freeze_path: results/behavior_model_geometry/FROZEN.json
+
+# Scorer load path (overridden by arms.<feature_arm>.freeze_path when present).
+scorer:
+  freeze_path: results/behavior_model/FROZEN.json
+  verify_digests: true
+  primary_model: gmm
+
+# Contact ↔ world-frame track association (docs/THREAT_MODEL.md).
+# The pipeline does not solve association: the track is an input.
+association:
+  assumption: given
+  sources: [eo_tracker, coastal_radar]
+  note: >
+    World-frame kinematics for a contact are assumed available from the EO
+    tracker and/or coastal radar (fusion). Linking a Detection / oracle
+    assertion to a track is out of scope — association is given, not inferred.
+
+# Decision vocabulary at the operating point.
+# flag = is_inconsistent True; pass = scored and not inconsistent;
+# abstain = unscored statuses (abstain / unknown_class / missing_envelope /
+# no_window / nan_features).
+decisions: [flag, pass, abstain]

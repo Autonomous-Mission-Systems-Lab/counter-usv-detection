@@ -76,3 +76,20 @@ calibration:
 # Reproducibility
 seed: 1337
 min_train_rows: 50            # skip envelope/subspace if fewer usable rows
+
+# Pooled-vs-class-conditional ablation. Fit is enabled; scoring uses
+# runtime ``envelope_override`` — this block is NOT added to class_envelope_map.
+pooled_ablation:
+  enabled: true
+  name: pooled_benign
+  description: >
+    Single envelope on all labeled benign train rows (no class conditioning).
+    Compared to class-conditional envelopes on label-swap discriminability.
+  members:
+    canonical_class:
+      - fishing
+      - sailing
+      - recreational
+      - passenger_ferry
+      - cargo_merchant
+      - working_service

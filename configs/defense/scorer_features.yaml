@@ -1,11 +1,12 @@
-# Scorer feature contract — frozen benign-behavior / kinematic consistency features.
+# Scorer feature contract — frozen benign-behavior / kinematic consistency features
+# plus the asset-relative encounter geometry family (contract v2).
 # Single source of truth for the one-class consistency scorer feature *set*
 # (extraction + corpus). Aligns with data/HARMONIZATION.md §B.4 and
 # docs/DATA_DICTIONARY.md. The model fit *subset* (deduped core/course) lives in
 # configs/defense/behavior_model.yaml → features. configs/base.yaml → kinematics
 # points here via feature_spec.
-version: 1
-frozen: 2026-07-19
+version: 2
+frozen: 2026-07-30
 
 # Cadence / window (authoritative for extraction; base.yaml may restate defaults).
 resample_seconds: 30          # target cadence when denser data is available
@@ -16,6 +17,7 @@ observation_window_sweep_s: [120, 180, 300, 600]  # time-to-flag sweep
 # points; 60 s was dropped from the sweep for that reason.
 
 # Window extraction policy (locked 2026-07-19)
+# Geometry uses the *same* last-W slice — no second windowing rule.
 window_policy:
   placement: last             # last W seconds of each track (runtime-faithful)
   per_track_per_length: 1     # one window per trip_id per W — no sliding/tiling
@@ -33,6 +35,7 @@ window_policy:
 # ---------------------------------------------------------------------------
 
 # Always-used kinematic features (metric world-frame). NaN → mask (never fill 0).
+# v1 columns — byte-identical names so frozen kinematics_only envelopes remain valid.
 core:
   - name: sog_mean
     alias: speed_mean
@@ -93,6 +96,47 @@ course:
     null_policy: mask
     gate: non_null
 
+# Asset-relative encounter geometry (v2). Requires a named defended asset.
+# Extraction: counterusv.defense.geometry_features.geometry_features_from_points
+# Annulus / inbound-leg gates: configs/defense/engagement_geometry.yaml
+# Abstain (whole block masked) when outside annulus or inbound gates fail —
+# never impute 0. Bearing-rate / short-horizon closing are coarse at ~60 s AIS.
+asset_relative:
+  null_policy: mask
+  abstain: outside_annulus_or_inbound_gates
+  features:
+    - name: range_min_nm
+      units: nm
+      null_policy: mask
+      definition: minimum range to asset among points in the engagement annulus
+    - name: closing_rate_med_kn
+      units: kn
+      null_policy: mask
+      definition: median of −Δrange/Δt on the inbound leg (positive = approaching)
+    - name: closing_rate_p90_kn
+      units: kn
+      null_policy: mask
+    - name: bearing_rate_std_dps
+      units: deg/s
+      null_policy: mask
+      definition: std of unwrapped bearing increments / Δt on the inbound leg
+    - name: dcpa_nm
+      units: nm
+      null_policy: mask
+      definition: closest approach of last pre-CPA segment (const-vel ENU ray)
+    - name: tcpa_s
+      units: s
+      null_policy: mask
+      definition: time to that closest approach from the segment start
+    - name: closing_frac
+      units: "[0,1]"
+      null_policy: mask
+      definition: fraction of inbound-leg segments with closing_rate > 0
+    - name: inbound_leg_persistence_s
+      units: s
+      null_policy: mask
+      definition: duration of contiguous inbound leg ending at CPA
+
 # Quality / gating columns (not scored directly; control which feature subset
 # is active for a track). Class-B heading is often absent (~12% mean availability
 # vs ~60% on Class-A) — heading-derived features are therefore NOT in the scorer
@@ -106,11 +150,21 @@ gates:
       course features above (those gate on their own non-null). Future
       heading-derived features would require heading_avail_frac >= threshold.
   heading_avail_threshold: 0.25   # reserved for any future heading-derived feats
+  geometry_usable:
+    units: bool
+    role: quality_flag
+    note: >
+      True when the asset-relative block was computed for this window.
+      False / absent → geometry features are masked (abstain), never filled.
 
 # Deliberately NOT included
 excluded:
   range_to_shore:
-    reason: geography ≠ behavior; no shoreline + cross-region normalization in corpus
+    reason: >
+      Static geography ≠ behavior; no shoreline + cross-region normalization.
+      Distinct from asset_relative (above), which describes evolving relationship
+      to a designated defended point (engagement_geometry.yaml /
+      docs/ENGAGEMENT_GEOMETRY.md).
   pos_speed_mean_kn:
     reason: recomputed from position/time; GPS-jitter inflated over small dt (noisy)
   heading_derived:
@@ -130,3 +184,6 @@ corpus:
   # usv never appears in AIS; listed so the scorer pipeline can hard-refuse it.
   refuse_sources: [usv]
   null_policy: mask_not_zero   # NaN = missing, never impute 0 for kinematics
+  geometry_features: data/defense/features_geometry_window_{W}s.parquet
+  placements: data/defense/placements.parquet
+  placements_digest: data/defense/placements_digest.json

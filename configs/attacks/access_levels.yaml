@@ -1,0 +1,34 @@
+# Access-level protocol (white / grey / black-box) for RQ1 ESR/TMSR.
+# White-box craft+score is the existing evasion/disguise runners; this file
+# locks the grey-box peer map and black-box held-out target for transfer eval
+# (docs/TRANSFER_PROTOCOL.md). Digest with patch.yaml + marine_eot.yaml at freeze.
+version: 1
+frozen: 2026-07-28
+
+# Surrogates may be used for white-box crafting. The held-out target is
+# eval-only (crafting refused in DifferentiableSurrogate / DetectorBaseline).
+surrogates: [yolo11s, yolo11l]
+held_out_target: rtdetr_l
+
+# Grey-box = same CNN family, different weights. With the locked roster that is
+# cross-scale YOLO transfer (craft on one surrogate, hard-eval on the other).
+grey_box_peers:
+  yolo11s: yolo11l
+  yolo11l: yolo11s
+
+# Default transfer eval targets for a surrogate (peer + held-out). White-box
+# re-score is optional via --include-white on the transfer runner.
+default_eval_targets_include_held_out: true
+
+# Where craft runners write reusable attacked canvases / patch tensors when
+# invoked with --save-patches (required before transfer eval).
+patch_bank_dirname: patch_bank
+
+# Shared scoring thresholds (must match evasion.yaml / disguise.yaml).
+evaluation:
+  conf_threshold: 0.25
+  iou_match: 0.5
+  nms_iou: 0.7
+  severity_axes: [scale, rotation, motion_blur, glare, spray, grazing_angle, sea_state]
+  severity_levels: [L0, L1, L2, L3, L4]
+  marine_eot_config: configs/attacks/marine_eot.yaml

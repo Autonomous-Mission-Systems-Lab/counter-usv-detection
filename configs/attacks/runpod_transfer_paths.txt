@@ -1,0 +1,15 @@
+# Incremental overlay for access-level transfer eval on RunPod.
+# Assumes EO train bundle already on the pod. Includes held-out rtdetr_l
+# weights for black-box eval (craft still YOLO-only).
+
+configs/
+scripts/
+src/
+docs/RUNPOD.md
+docs/TRANSFER_PROTOCOL.md
+docs/METRICS.md
+docs/THREAT_MODEL.md
+results/detector_baselines/FROZEN.json
+results/detector_baselines/yolo11s/weights/best.pt
+results/detector_baselines/yolo11l/weights/best.pt
+results/detector_baselines/rtdetr_l/weights/best.pt

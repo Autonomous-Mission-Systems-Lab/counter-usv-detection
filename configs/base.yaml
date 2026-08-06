@@ -33,12 +33,8 @@ data:
     native: [1920, 1080]
     top: [0, 110]       # timestamp
     bottom: [980, 1080] # camera ID
-  # Real trajectory corpus for the benign-behavior model (AIS + video track curation).
+  # Real trajectory corpus for the benign-behavior model (MarineCadastre AIS).
   tracks_ais: data/tracks/tracks_ais.parquet # AIS-derived benign tracks (offline only)
-  tracks_video: data/tracks/tracks_video.parquet # SMD video non-cooperative tracks: scale-normalized
-                                            # image-plane features only (calibration gate FAILED — no
-                                            # metric world frame). Held-out sensitivity pool, NOT pooled
-                                            # with AIS; do not compare its numbers to AIS metric envelopes.
 
 kinematics:
   # Class-conditional benign-behavior model.
@@ -49,9 +45,8 @@ kinematics:
   feature_spec: configs/defense/scorer_features.yaml
   # Cadence / window knobs also live in scorer_features.yaml (extraction reads
   # that file). Restated here only as project-wide defaults for discoverability.
-  resample_seconds: 30 # track resampling cadence (AIS). SMD video is resampled to 3 Hz separately.
-  observation_window_s: 300 # default history for a consistency decision; swept in eval (time-to-flag).
-                             # NB: exceeds every SMD clip (~7-20 s) — SMD informs only the short end of the time-to-flag curve.
+  resample_seconds: 30 # track resampling cadence (AIS)
+  observation_window_s: 300 # default history for a consistency decision; swept in eval (time-to-flag)
   # range_to_shore intentionally NOT included: no such feature in the corpus (geography ≠
   # behavior; no range-to-shore computed). See data/HARMONIZATION.md B.4 /
   # configs/defense/scorer_features.yaml.

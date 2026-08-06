@@ -1,0 +1,56 @@
+# Adaptive-adversary cost curve (RQ3).
+# Joins frozen oracle DDR cells to the motion sweep; never mutates
+# results/adversary_motion/FROZEN_SWEEP.json. Oracle-only (no patch slice).
+version: 1
+frozen: 2026-07-31
+
+condition: perfect_disguise_oracle
+far_target: 0.05
+
+oracle_ddr:
+  cells: results/oracle_ddr/oracle_ddr_cells.parquet
+  summary: results/oracle_ddr/oracle_ddr_summary.json
+  config: configs/defense/oracle_ddr.yaml
+
+sweep:
+  freeze: results/adversary_motion/FROZEN_SWEEP.json
+  cells: results/adversary_motion/sweep_cells.parquet
+  points: results/adversary_motion/tracks_points.parquet
+  meta: results/adversary_motion/tracks_meta.json
+
+kinematics_sweep: configs/attacks/kinematics.yaml
+engagement_geometry: configs/defense/engagement_geometry.yaml
+placements: data/defense/placements.parquet
+
+# Consistency arms only (presence gap already shown in oracle DDR).
+arms:
+  - kinematics_only
+  - kinematics_geometry
+
+# Cost recipe: Δt_add = R (1/v_mimic − 1/v_max), R = start − commit.
+cost:
+  start_range_nm: 12.0
+  v_max_source: platform_burst
+  # Plot / report Δt in minutes.
+  delta_t_unit: min
+
+# Causal first-flag checkpoints (folded former time-to-flag).
+warning_time:
+  stride_s: 60
+  # t_flag measured from first time range ≤ max_range_nm.
+  annulus_entry: true
+
+thin_n_threshold: 20
+
+output:
+  dir: results/adaptive_cost
+  joined: results/adaptive_cost/adaptive_cost_joined.parquet
+  curves: results/adaptive_cost/adaptive_cost_curves.parquet
+  warning: results/adaptive_cost/adaptive_cost_warning.parquet
+  report: results/adaptive_cost/adaptive_cost_report.md
+  summary: results/adaptive_cost/adaptive_cost_summary.json
+
+firewall_note: >
+  Hostile / adaptive trajectories are synthesized at evaluation only; the
+  benign-behavior scorer is never trained on them. Cost curves reuse
+  purpose=eval scores; the motion freeze carries no DDR / cost payload.

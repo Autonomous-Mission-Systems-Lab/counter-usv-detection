@@ -1,0 +1,110 @@
+# Adversary motion model — eval-only hostile / adaptive track generator.
+# Emits world-frame points (trip_id/t/lat/lon/sog/cog) relative to a named
+# defended asset from the frozen placements table. Features are derived by the
+# same kinematics + geometry extractors as real AIS — never a parallel path.
+#
+# Sweep grid is SHA-256 frozen BEFORE any DDR / cost-curve scoring.
+# This recipe only supports generation + validity (negative-control smoke).
+version: 1
+frozen: 2026-07-31
+
+engagement_geometry: configs/defense/engagement_geometry.yaml
+placements: data/defense/placements.parquet
+placements_digest: data/defense/placements_digest.json
+
+# Pipeline cadence — envelopes were fit on ~60 s AIS. Synthesize finely, then
+# thin to this cadence before feature extraction.
+thin_cadence_s: 60
+synth_dt_s: 1.0
+
+# Start outside the engagement annulus so inbound-leg history exists.
+start_range_nm: 12.0
+# Terminal stop (do not drive into the pier).
+terminal_range_nm: 0.3
+
+# Headline assets = fit population (same as envelope train / FAR operating point).
+headline_placement_roles: [fit]
+# Optional sensitivity assets (fairway / offshore) — not the freeze headline.
+include_far_only: false
+
+seed: 1337
+
+# ---------------------------------------------------------------------------
+# Cited platform profiles (bounds are citations, not invented)
+# ---------------------------------------------------------------------------
+platforms:
+  magura_v5:
+    name: Magura V5
+    cruise_kn: 22.0
+    burst_kn: 42.0
+    range_nm: 450.0
+    citations:
+      - "STE MAGURA V5 manufacturer specification sheet, IDEF 2023"
+      - "Wertheim, USNI Proceedings 151(9), September 2025"
+      - "Sutton, Covert Shores (Ukrainian maritime drones overview)"
+  converted_skiff:
+    name: Converted fishing skiff (Houthi-class)
+    cruise_kn: 35.0
+    burst_kn: 45.0
+    range_nm: 150.0
+    citations:
+      - "Cardash, Counter-IED Report, Autumn 2024 (Toufan-1 35/41/52 kn)"
+      - "Ambrey Threat Circular, June 2024 (fishing-type hulls; ~2 nm RC handoff)"
+      - "Sutton, Covert Shores (Houthi Blowfish); Reuters 3 July 2024"
+
+# Planing-craft dynamics caps applied to every generated track.
+dynamics:
+  # Sustained lateral accel ≈ 0.2 g → ω_max (rad/s) = a_lat / v; stored as deg/s
+  # at a reference speed for a hard cap in the generator.
+  max_turn_rate_dps: 8.0
+  max_accel_kn_per_s: 0.5
+
+# Corpus plausibility band (writeup): tracks with p95 SOG ≥ threshold &
+# straightness ≥ 0.95. Counts are documentary; generator tags cells outside
+# the highest occupied band as extrapolation.
+plausibility_band:
+  straightness_min: 0.95
+  sog_thresholds_kn: [25, 30, 35, 40]
+  corpus_counts: [449, 212, 85, 40]
+  max_in_band_kn: 40.0
+
+# ---------------------------------------------------------------------------
+# Sweep grid (frozen before scoring — do not edit after FROZEN_SWEEP.json)
+# ---------------------------------------------------------------------------
+sweep:
+  v_mimic_kn: [8, 12, 18, 25, 30, 35]
+  commit_range_nm: [0.5, 1.0, 2.0, 4.0]
+  bearing_offset_deg: [0, 15, 30, 45]
+  mimicked_classes: [fishing, recreational, sailing]
+  platforms: [magura_v5, converted_skiff]
+  # Unconstrained attack-run end of spectrum (one cell per platform × asset
+  # × mimicked_class): v_mimic = burst, commit at max annulus, radial.
+  include_unconstrained: true
+
+# Negative-control cells: full-fidelity mimic (slow, class-plausible, late/no
+# aggressive commit). Scored under the matched asserted class; flag rate should
+# land near that arm's FAR.
+negative_control:
+  v_mimic_kn: 8.0
+  commit_range_nm: 0.5
+  bearing_offset_deg: 0.0
+  use_burst_on_commit: false
+
+# Validity smoke tolerances (reported; not a DDR gate).
+validity:
+  cadence_median_tol_s: 5.0
+  negative_control_far_factor: 2.0
+  negative_control_far_slack: 0.05
+  kinematics_far_summary: results/behavior_model/far_summary.json
+  geometry_far_summary: results/behavior_model_geometry/far_placement_summary.json
+  geometry_primary_window_s: 600
+  kinematics_windows_s: [300, 600]
+
+# Artifact root — never write into data/behavior or data/defense train tables.
+output:
+  dir: results/adversary_motion
+  points: results/adversary_motion/tracks_points.parquet
+  cells: results/adversary_motion/sweep_cells.parquet
+  freeze: results/adversary_motion/FROZEN_SWEEP.json
+  validity_report: results/adversary_motion/validity_report.md
+  validity_summary: results/adversary_motion/validity_summary.json

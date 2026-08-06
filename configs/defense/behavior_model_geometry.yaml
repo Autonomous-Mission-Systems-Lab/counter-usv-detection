@@ -1,0 +1,107 @@
+# Benign-behavior model recipe — kinematics + asset-relative geometry arm.
+# Kinematics-only envelopes stay frozen under results/behavior_model/; this
+# recipe writes a parallel arm under results/behavior_model_geometry/.
+# Select by held-out *benign* calibration only — never by hostile/attack signal.
+version: 1
+frozen: 2026-07-31
+feature_arm: kinematics_geometry
+
+feature_spec: configs/defense/scorer_features.yaml
+envelope_map: configs/defense/class_envelope_map.yaml
+engagement_geometry: configs/defense/engagement_geometry.yaml
+
+# Geometry mass lives at longer horizons under AIS cadence (120 s yields 0
+# usable inbound legs). Fit 180/300/600; primary = 600 s.
+window_s: 600
+windows_s: [180, 300, 600]
+require_complete: true
+
+# Join kinematics windows with encounter-paired geometry (fit-population only).
+kinematics_path_template: data/behavior/features_window_{w}s.parquet
+geometry_path_template: data/defense/features_geometry_window_{w}s.parquet
+placements: data/defense/placements.parquet
+placements_digest: data/defense/placements_digest.json
+splits: data/splits/ais_track_splits.csv
+
+# Fit-population placement classes (must match engagement_geometry fit_population).
+fit_placement_classes: [berth_approach, anchorage]
+
+features:
+  core:
+    - sog_med
+    - sog_p95
+    - sog_std
+    - loiter_frac
+    - straightness
+    - accel_mean_abs
+  course:
+    - turn_rate_mean_dps
+    - cog_circ_std_deg
+  # Appended to both subspaces when present (encounter rows always have them).
+  geometry:
+    - range_min_nm
+    - closing_rate_med_kn
+    - closing_rate_p90_kn
+    - bearing_rate_std_dps
+    - dcpa_nm
+    - tcpa_s
+    - closing_frac
+    - inbound_leg_persistence_s
+
+subspaces: [core, core_course]
+
+models:
+  primary: gmm
+  baselines: [mahalanobis, isolation_forest]
+  gmm:
+    n_components_sweep: [1, 2, 3, 4, 5, 6, 8, 10, 12]
+    covariance_type: full
+    reg_covar: 1.0e-6
+    max_iter: 200
+    n_init: 3
+    selection: val_loglik_knee
+    selection_tol_nats: 0.5
+  mahalanobis:
+    shrinkage: ledoit_wolf
+  isolation_forest:
+    n_estimators: 200
+    max_samples: auto
+    contamination: auto
+    random_state: 1337
+
+calibration:
+  far_targets: [0.01, 0.05, 0.10]
+  default_far: 0.05
+
+# Placement-swept FAR gate. Operating-point claim is fit-population
+# only; fairway_stress / offshore_terminal are sensitivity strata.
+far_gate:
+  operating_placements: [berth_approach, anchorage]
+  sensitivity_placements: [offshore_terminal, fairway_stress]
+  # Pass if geometry overall test FAR@5% (operating placements, n-weighted)
+  # ≤ kinematics-only overall test FAR@5% + max_absolute_excess.
+  max_absolute_excess: 0.05
+  kinematics_far_summary: results/behavior_model/far_summary.json
+  # Per-class watch cells (not individually gate-failing).
+  watch_envelopes: [passenger_ferry, working_service, cargo_merchant]
+
+seed: 1337
+# Slightly below kinematics (50) so fishing can fit at 600 s (~47 train rows).
+min_train_rows: 40
+
+# Pooled-vs-class-conditional ablation (does class conditioning add over one
+# pooled geometry envelope?).
+pooled_ablation:
+  enabled: true
+  name: pooled_benign
+  description: >
+    Single envelope on all benign encounter rows (no class conditioning on
+    geometry). Compared to class-conditional envelopes in the fit report.
+  members:
+    canonical_class:
+      - fishing
+      - sailing
+      - recreational
+      - passenger_ferry
+      - cargo_merchant
+      - working_service

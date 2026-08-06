@@ -1,0 +1,27 @@
+# Perfect-disguise oracle — no-patch class assertion for RQ2/RQ3.
+# Models an ideal patch and zero-tech visual disguise: the defense is simply
+# *told* the contact carries the target benign class. Patch-condition DDR
+# decomposes as oracle DDR × patch reliability (docs/METRICS.md).
+# Digest with disguise.yaml / access_levels.yaml at attack freeze.
+version: 1
+frozen: 2026-07-28
+
+# True hostile class that the oracle replaces.
+true_class: usv
+
+# Benign classes the oracle may assert (same set as the adversary-motion
+# mimicked classes / disguise TMSR targets).
+target_benign_classes: [fishing, recreational, sailing]
+
+# Asserted detection confidence under the oracle (perfect label, no EO score).
+assertion_score: 1.0
+
+# Condition tag carried on every assertion record for defense evaluation.
+condition: perfect_disguise_oracle
+
+# Optional taxonomy / YOLO index hints (filled from data.yaml when available).
+# class_id is resolved at runtime from the EO view names map when possible.
+notes: >
+  No pixels are modified. The oracle only replaces the EO-asserted class
+  (and role) on a contact so ConsistencyScorer scores the spoofed benign
+  envelope. Use purpose='eval' when scoring hostile tracks.

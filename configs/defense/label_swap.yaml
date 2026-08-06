@@ -1,0 +1,56 @@
+# Real-track label-swap control — synthesis-free class-swap discriminability.
+# Scores attack-run-like AIS windows under a different asserted benign class.
+# Thresholds come from frozen envelopes; this recipe never retunes them.
+version: 1
+frozen: 2026-07-31
+
+envelope_map: configs/defense/class_envelope_map.yaml
+feature_spec: configs/defense/scorer_features.yaml
+
+# Attack-run-like band (applied on the scored window's kinematics features).
+attack_run:
+  sog_p95_min: 30.0
+  straightness_min: 0.95
+
+# Operating FAR key (frozen calibration; never retuned here).
+far_target: 0.05
+
+# Split hygiene for the Class-B small-craft proxy (train pool = Class-B ∩
+# recreational ∪ fishing ∪ sailing). Pairings that touch that pool are
+# held-out only.
+proxy_envelope: small_craft_class_b_proxy
+proxy_source_classes: [recreational, fishing, sailing]
+proxy_asserted_eo_classes: [small_craft]
+held_out_splits: [val, test]
+all_splits: [train, val, test]
+
+# Headline operating placements (geometry arm); all placements = sensitivity.
+operating_placement_classes: [berth_approach, anchorage]
+
+arms:
+  kinematics_only:
+    freeze_path: results/behavior_model/FROZEN.json
+    model_cfg: configs/defense/behavior_model.yaml
+    windows_s: [120, 180, 300]
+    features_path_template: data/behavior/features_window_{w}s.parquet
+  kinematics_geometry:
+    freeze_path: results/behavior_model_geometry/FROZEN.json
+    model_cfg: configs/defense/behavior_model_geometry.yaml
+    windows_s: [180, 300, 600]
+    kinematics_path_template: data/behavior/features_window_{w}s.parquet
+    geometry_path_template: data/defense/features_geometry_window_{w}s.parquet
+    fit_placement_classes: [berth_approach, anchorage]
+
+thin_n_threshold: 20
+
+# Pooled ablation: leave conditional by default. CLI --envelope-override
+# wins; set envelope_routing: pooled to score all scoreable classes against
+# pooled_benign while keeping admissible_splits class-conditional.
+envelope_routing: conditional
+# envelope_override: pooled_benign
+
+output:
+  dir: results/label_swap
+  report: results/label_swap/label_swap_report.md
+  summary: results/label_swap/label_swap_summary.json
+  cells: results/label_swap/label_swap_cells.parquet

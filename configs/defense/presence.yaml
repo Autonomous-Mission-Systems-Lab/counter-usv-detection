@@ -1,0 +1,29 @@
+# Presence-only cross-check — RQ2 comparator (not a prior-art baseline).
+# Independent world-frame track exists; EO missed or mislabeled the contact.
+# Catches evasion; by construction cannot reach disguise (EO detected).
+version: 1
+frozen: 2026-07-31
+
+defense_kind: presence_only
+
+# EO outcomes relative to the independent track.
+# flag  = presence inconsistency (track paint, no usable EO)
+# pass  = presence satisfied (EO saw a vessel — includes successful disguise)
+eo_outcomes:
+  flag: [missed, mislabeled]
+  pass: [detected]
+
+# Contact ↔ world-frame track association (same assumption as pipeline.yaml).
+association:
+  assumption: given
+  sources: [eo_tracker, coastal_radar]
+  note: >
+    World-frame kinematics for a contact are assumed available from the EO
+    tracker and/or coastal radar (fusion). Linking a Detection / oracle
+    assertion to a track is out of scope — association is given, not inferred.
+
+# Decision vocabulary (shared with the consistency pipeline).
+# flag = track present ∧ EO missed/mislabeled;
+# pass = track present ∧ EO detected;
+# abstain = no independent track.
+decisions: [flag, pass, abstain]

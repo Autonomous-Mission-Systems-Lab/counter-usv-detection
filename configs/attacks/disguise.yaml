@@ -13,7 +13,7 @@ surrogate:
   true_class: usv              # hostile class we flip away from
   device: auto                 # auto → cuda on RunPod; override with --device 0
 
-# Target benign classes for the hostile→benign flip (METRICS.md / plan 4.4).
+# Target benign classes for the hostile→benign flip (see docs/METRICS.md).
 # Runner reports TMSR separately for each.
 target_benign_classes: [fishing, recreational]
 

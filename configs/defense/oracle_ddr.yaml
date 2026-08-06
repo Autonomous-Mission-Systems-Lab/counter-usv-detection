@@ -1,0 +1,59 @@
+# Oracle detection rate + defensibility gap (perfect-disguise oracle).
+# Scores the frozen adversary-motion sweep under asserted = mimicked class
+# in both consistency arms and against the presence-only comparator.
+# Thresholds come from frozen envelopes; this recipe never retunes them.
+# Never writes DDR numbers into results/adversary_motion/FROZEN_SWEEP.json.
+version: 1
+frozen: 2026-07-31
+
+condition: perfect_disguise_oracle
+far_target: 0.05
+
+oracle: configs/attacks/oracle.yaml
+presence: configs/defense/presence.yaml
+kinematics_sweep: configs/attacks/kinematics.yaml
+engagement_geometry: configs/defense/engagement_geometry.yaml
+
+# Frozen adversary-motion inputs (read-only).
+sweep:
+  freeze: results/adversary_motion/FROZEN_SWEEP.json
+  points: results/adversary_motion/tracks_points.parquet
+  meta: results/adversary_motion/tracks_meta.json
+  cells: results/adversary_motion/sweep_cells.parquet
+
+arms:
+  kinematics_only:
+    feature_arm: kinematics_only
+    freeze_path: results/behavior_model/FROZEN.json
+    far_summary: results/behavior_model/far_summary.json
+    windows_s: [120, 180, 300]
+    join_geometry: false
+  kinematics_geometry:
+    feature_arm: kinematics_geometry
+    freeze_path: results/behavior_model_geometry/FROZEN.json
+    far_summary: results/behavior_model_geometry/far_placement_summary.json
+    windows_s: [180, 300, 600]
+    join_geometry: true
+
+# NC flag rate must land near the arm's measured FAR (same slack as validity).
+nc_tolerance:
+  factor: 2.0
+  slack: 0.05
+
+thin_n_threshold: 20
+
+# Pooled ablation: leave conditional by default. CLI --envelope-override
+# wins; set envelope_routing: pooled to score against pooled_benign.
+envelope_routing: conditional
+# envelope_override: pooled_benign
+
+output:
+  dir: results/oracle_ddr
+  report: results/oracle_ddr/oracle_ddr_report.md
+  summary: results/oracle_ddr/oracle_ddr_summary.json
+  cells: results/oracle_ddr/oracle_ddr_cells.parquet
+
+firewall_note: >
+  Hostile / adaptive trajectories are synthesized at evaluation only; the
+  benign-behavior scorer is never trained on them. Scores use purpose=eval
+  with track_meta role=hostile / source=synth.
