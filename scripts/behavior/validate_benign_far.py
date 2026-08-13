@@ -179,7 +179,7 @@ def far_curve(scores: np.ndarray, far_targets: list[float]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Eval-only attack-profile preview (feature-space stand-in until Phase 4)
+# Eval-only attack-profile preview (feature-space stand-in until adversary-motion / attack eval)
 # ---------------------------------------------------------------------------
 
 def straight_line_high_sog_profile(

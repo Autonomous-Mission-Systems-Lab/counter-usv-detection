@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert every EO source to one COCO master .
+"""Convert every EO source to one COCO master.
 
 Reads each source's native annotations, maps native categories to the canonical
 classes defined in ``data/taxonomy.yaml``, and writes:

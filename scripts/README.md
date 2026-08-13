@@ -11,17 +11,26 @@ thin runnable layer on top.
 | `data/` | Acquire / annotate / audit / split EO + tracks; package derived release |
 | `detector/` | Train / eval / freeze EO detector baselines (+ RunPod helpers) |
 | `behavior/` | Benign corpus, windowed features, envelope fit / freeze / FAR |
-| `attacks/` | Marine-EOT + patch core + evasion/ESR + disguise/TMSR |
+| `defense/` | Wired defense pipeline, presence, oracle DDR, adaptive cost, freeze |
+| `attacks/` | Marine-EOT + patch core + evasion/ESR + disguise/TMSR + transfer + oracle + freeze + adversary motion |
+| `report/` | Regenerable paper figures from digest-verified freezes → `results/paper/` |
+| `release/` | Weight-free data/results bundle for Zenodo (`build_bundle.py`) |
 
 ## Quick index
 
-**data/** — `fetch_data` · `collect_usv` · `build_coco_master` · `audit_eo` · `build_eval_slice` · `build_splits` · `ingest_ais` · `ingest_smd_tracks` · `export_eo_views` / `qa_eo_loader` · `package_derived`
+**data/** — `fetch_data` · `collect_usv` · `build_coco_master` · `audit_eo` · `build_eval_slice` · `build_splits` · `ingest_ais` · `export_eo_views` / `qa_eo_loader` · `package_derived`
 
 **detector/** — `train_detector` · `eval_detector_clean` · `usv_capability` · `freeze_baselines` · `sync_eo_train_bundle.sh` · `setup_runpod_eo.sh`
 
-**behavior/** — `build_benign_corpus` · `build_class_envelope_map` · `extract_windowed_features` · `fit_behavior_model` · `freeze_behavior_model` · `validate_benign_far`
+**behavior/** — `build_benign_corpus` · `build_class_envelope_map` · `extract_windowed_features` · `fit_behavior_model` · `fit_geometry_model` · `freeze_behavior_model` · `validate_benign_far` · `validate_geometry_far` · `run_label_swap`
 
-**attacks/** — `render_marine_eot_grid` · `smoke_patch_core` · `run_evasion` · `run_disguise` · `sync_*_runpod.sh` · `setup_runpod_*.sh`
+**defense/** — `smoke_pipeline` · `smoke_presence` · `run_oracle_ddr` · `run_adaptive_cost` · `freeze_defense`
+
+**attacks/** — `render_marine_eot_grid` · `smoke_patch_core` · `run_evasion` · `run_disguise` · `run_transfer` · `run_oracle` · `freeze_attacks` · `generate_adversary_tracks` · `validate_adversary_motion` · `sync_*_runpod.sh` · `setup_runpod_*.sh`
+
+**report/** — `build_all` · `fig_rq1_feasibility` · `fig_rq2_ddr_gap` · `fig_label_swap` · `fig_rq3_cost_warning` · `fig_far` · `fig_supp_severity` · `fig_supp_pooled_gap` · `captions` (Fig. 1 is hand-authored under `figures/`)
+
+**release/** — `build_bundle` (weight-free data/results archive → `dist/release/`)
 
 ---
 
@@ -47,7 +56,7 @@ python scripts/data/fetch_data.py --source marinecadastre_ais \
     --ais-start 2023-06-01 --ais-end 2023-06-07
 
 # 4. Print manual instructions for the gated sources
-python scripts/data/fetch_data.py --source mcships smd gfw
+python scripts/data/fetch_data.py --source mcships smd
 ```
 
 | Source | Auto? | Notes |
@@ -55,10 +64,8 @@ python scripts/data/fetch_data.py --source mcships smd gfw
 | `seaships` | yes* | *WHU direct link is often down / serves HTML — the script detects that and prints the Kaggle/Roboflow mirror fallback. |
 | `aboships` | yes | Zenodo rec. 4736931, single ~8.2 GB zip. CC BY 4.0. |
 | `marinecadastre_ais` | yes | Needs `--ais-start/--ais-end`. NOAA OCM daily zips. |
-| `dma_ais` | yes | Needs dates. `web.ais.dk` HTTPS cert is broken → uses `http`; `--insecure` for https. |
-| `mcships` | manual | Baidu / Google Drive (`pip install gdown` to auto-pull the GDrive id). **CC BY-NC-ND** (or equiv. academic research) — NC + ND; no re-host. |
-| `smd` | manual | Original videos on Google Drive; SMD-Plus labels on GitHub. On-shore subset only. |
-| `gfw` | manual | Free account + API token; **CC BY-NC 4.0 (non-commercial)**. |
+| `mcships` | manual | Baidu / Google Drive (`pip install gdown` to auto-pull the GDrive id). No stated license from the authors; citation requested; no re-host. Train-only — omitted from the permissive release slice. |
+| `smd` | manual | Original videos on Google Drive; SMD-Plus labels on GitHub. On-shore subset for EO detection frames. |
 
 Extras:
 - `--all-auto` runs every non-gated source (AIS skipped unless dates given).
@@ -271,6 +278,62 @@ Writes `results/behavior_model/envelopes/<name>.joblib`,
 and multi-horizon coverage/FAR). Recipe:
 `configs/defense/behavior_model.yaml`.
 
+## `behavior/fit_geometry_model.py` — kinematics + geometry envelopes
+
+Fits the extended arm: kinematics features joined with asset-relative geometry
+on **berth_approach / anchorage** encounter pairs (fit population). Horizons
+**180 / 300 / 600 s** (primary **600 s**; 120 s omitted — AIS cadence yields no
+usable inbound legs). Same GMM / Mahalanobis / IsolationForest dual-subspace
+recipe; geometry columns appended to both subspaces. Also fits a
+`pooled_benign` ablation (no class conditioning).
+
+Kinematics-only envelopes under `results/behavior_model/` are left untouched.
+
+```bash
+python scripts/behavior/fit_geometry_model.py
+python scripts/behavior/fit_geometry_model.py --smoke --envelope recreational
+```
+
+Writes `results/behavior_model_geometry/envelopes/<name>.joblib`,
+`fit_summary.json`, `fit_report.md`, and `FROZEN.json` (scorer-compatible).
+Recipe: `configs/defense/behavior_model_geometry.yaml`. Pipeline selects this
+arm via `feature_arm: kinematics_geometry` in `configs/defense/pipeline.yaml`.
+
+## `behavior/validate_geometry_far.py` — placement-swept FAR gate
+
+Scores held-out benign `(trip, asset)` encounters under the frozen
+`kinematics_geometry` envelopes across the **same digested placements table**
+as the fit. Reports FAR as a distribution over `placement_class` /
+`port_region`. Operating-point claim = berth + anchorage; fairway /
+offshore_terminal are sensitivity strata.
+
+**Gate:** operating-point overall test FAR@5% ≤ kinematics-only FAR@5% +
+`far_gate.max_absolute_excess` (default 5 pp). Exit code 2 on FAIL.
+
+```bash
+python scripts/behavior/validate_geometry_far.py
+python scripts/behavior/validate_geometry_far.py --smoke
+```
+
+Writes `results/behavior_model_geometry/far_placement_report.md` +
+`far_placement_summary.json`. Unit tests: `tests/test_geometry_far.py`.
+
+## `behavior/run_label_swap.py` — real-track class-swap discriminability
+
+Scores attack-run-like AIS windows (p95 SOG ≥ 30 kn, straightness ≥ 0.95)
+under a **different** asserted benign class on both feature arms. Synthesis-free
+anchor for class-conditional discriminability; thresholds frozen (never
+retuned). `small_craft` / Class-B proxy pairings are held-out only.
+
+```bash
+python scripts/behavior/run_label_swap.py
+python scripts/behavior/run_label_swap.py --smoke
+```
+
+Writes `results/label_swap/label_swap_report.md`, `label_swap_summary.json`,
+and `label_swap_cells.parquet`. Library helpers:
+`counterusv.eval.label_swap`. Unit tests: `tests/test_label_swap.py`.
+
 ## ConsistencyScorer — class–kinematics defense interface
 
 `counterusv.defense.ConsistencyScorer` scores an EO-asserted class against the
@@ -304,18 +367,229 @@ result = scorer.score("fishing", attack_feats, purpose="eval",
 `is_inconsistent` is `score > threshold` at the requested FAR. Abstain classes
 (`usv`, `military`, `benign_unspecified`, …) return `status="abstain"`.
 
-Prefer the freeze for Phase 5/6:
+Prefer the freeze for downstream defense wiring:
 
 ```python
 scorer = ConsistencyScorer.from_freeze()  # verifies SHA-256 digests
 ```
 
-Unit tests: `PYTHONPATH=src python -m pytest tests/test_consistency_scorer.py`.
+## `defense/freeze_defense.py` — pin the defense bundle after evaluation
+
+Re-attests both arm freezes (strips YAML config digests; envelope/data-pin
+drift aborts), re-checks the benign-only training firewall, records shared
+defense config *paths* plus digests of adversary-motion sweep + RQ2/RQ3
+summary artifacts, and smoke-loads both consistency arms plus presence-only.
+
+```bash
+python scripts/defense/freeze_defense.py
+python scripts/defense/freeze_defense.py --skip-smoke
+```
+
+Writes `results/defense/FROZEN.json` and `MODEL_CARD.md`. Pins include
+oracle DDR, adaptive cost, real-track label-swap summaries, and the
+pooled-vs-conditional ablation summaries (`label_swap_pooled/`,
+`oracle_ddr_pooled/`).
+
+## `report/` — regenerable paper figures
+
+Builds the security-lite figure set into `results/paper/` from digest-verified
+attack and defense freezes. Fig. 1 is hand-authored (`figures/fig1_system.svg`)
+and copied as a static asset; Figs 2–6 and S1–S2 are regenerated from pinned
+JSON/parquet. Digests are checked at run time against
+`results/attacks/FROZEN.json` and `results/defense/FROZEN.json`.
+
+```bash
+python scripts/report/build_all.py
+python scripts/report/build_all.py --no-verify   # draft only
+python scripts/report/build_all.py --smoke       # temp dir + skip verify
+python scripts/report/fig_rq1_feasibility.py
+python scripts/report/fig_rq2_ddr_gap.py
+python scripts/report/fig_label_swap.py
+python scripts/report/fig_rq3_cost_warning.py
+python scripts/report/fig_far.py
+python scripts/report/fig_supp_severity.py
+python scripts/report/fig_supp_pooled_gap.py
+python scripts/report/captions.py
+```
+
+Outputs: `results/paper/fig{1..6,_S1,_S2}_*.{png,pdf,svg}` + `CAPTIONS.{json,md}` +
+`PROVENANCE.json`. See `figures/README.md` for editing/export notes on Fig. 1.
+
+The figures carry no titles and no footnote text — panels are labelled `(a)`,
+`(b)`, … and everything descriptive lives in the captions. `captions.py` emits
+one record per figure to `CAPTIONS.json`:
+
+| Field | Use |
+|---|---|
+| `short_title` | bold caption lead-in / list-of-figures entry |
+| `caption` | full caption body, panels described inline |
+| `panels` | one line per panel, for slides and alt text |
+| `takeaway` | the single claim the figure supports |
+| `caveats` | limits a reviewer would otherwise raise |
+| `sources` | pinned artifacts the panel was drawn from |
+| `key_values` | every number the caption quotes |
+| `latex_label` | stable `\ref` target |
+
+Numbers are read from the same pinned summaries the figures plot, so a caption
+cannot drift from its panel; `CAPTIONS.md` is a rendering of the same records.
+Where a caption asserts a relation rather than a value (Fig. S1: black-box
+severity never reaches a white/grey L0 baseline) the build fails if new data
+breaks it.
+
+## `defense/smoke_pipeline.py` — detector / oracle → decision
+
+Wires `Detection` or `OracleAssertion` + world-frame track features through
+`counterusv.defense.DefensePipeline` at the FAR operating point
+(`configs/defense/pipeline.yaml`). Contact↔track association is assumed
+*given* (radar/EO fusion) — not inferred.
+
+```bash
+python scripts/defense/smoke_pipeline.py
+python scripts/defense/smoke_pipeline.py --no-verify-digests
+```
+
+```python
+from counterusv.defense import DefensePipeline
+from counterusv.attacks.oracle import PerfectDisguiseOracle
+
+pipe = DefensePipeline.from_freeze()
+decision = pipe.evaluate(detection, features)          # Detection
+decision = pipe.evaluate(oracle_assertion, features, purpose="eval")
+# decision.action ∈ {flag, pass, abstain}
+```
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_pipeline.py`.
+
+## `defense/smoke_presence.py` — presence-only cross-check + harness swap
+
+The RQ2 comparator: an independent world-frame track exists but EO missed
+or mislabeled the contact. Catches **evasion**; by construction cannot
+reach **disguise** (EO detected the contact). Shares the
+`DefenseBackend.evaluate → DefenseDecision` surface with the consistency
+pipeline so later detection-rate work can swap defenses in one harness.
+
+```bash
+python scripts/defense/smoke_presence.py
+python scripts/defense/smoke_presence.py --no-verify-digests
+```
+
+```python
+from counterusv.defense import (
+    PresenceOnlyDefense,
+    presence_for_evasion,
+    presence_for_disguise,
+    evaluate_contact,
+    load_defense,
+)
+
+presence = PresenceOnlyDefense.from_config()
+presence.evaluate(presence=presence_for_evasion())          # → flag
+presence.evaluate(oracle_assertion, purpose="eval")         # disguise → pass
+
+# Same contact, two defenses:
+evaluate_contact(presence, assertion=oracle, presence=presence_for_disguise(oracle))
+evaluate_contact(load_defense("consistency", verify_digests=False),
+                 assertion=oracle, features=feats, purpose="eval")
+```
+
+Config: `configs/defense/presence.yaml`. Library:
+`counterusv.defense.presence`, `counterusv.defense.harness`.
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_presence.py`.
+
+## `defense/run_oracle_ddr.py` — oracle DDR + defensibility gap
+
+Scores the frozen adversary-motion sweep under the perfect-disguise oracle
+(`asserted_class` = mimicked class, no patch) through both consistency arms
+and the presence-only comparator. Detection rates are paired with each arm's
+measured FAR. Writes only under `results/oracle_ddr/` — never mutates
+`FROZEN_SWEEP.json`.
+
+```bash
+python scripts/defense/run_oracle_ddr.py --smoke
+python scripts/defense/run_oracle_ddr.py
+python scripts/defense/run_oracle_ddr.py --no-verify-digests
+```
+
+Config: `configs/defense/oracle_ddr.yaml`. Library: `counterusv.eval.oracle_ddr`.
+
+Outputs: `results/oracle_ddr/oracle_ddr_report.md`, `oracle_ddr_summary.json`,
+`oracle_ddr_cells.parquet`.
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_oracle_ddr.py`.
+
+## `defense/run_adaptive_cost.py` — RQ3 cost curve
+
+Joins terminal oracle DDR to the frozen motion sweep (no re-score for
+curves). Primary cost axis: added approach time
+`Δt_add = R (1/v_mimic − 1/v_max)` with `R = start − commit` (nm, kn → hours,
+reported in minutes). Companion axes: `v_mimic`, commit range, bearing offset.
+Optional causal checkpoint pass records first-flag warning time / standoff.
+Never mutates `FROZEN_SWEEP.json`. Oracle-only (no patch slice).
+
+```bash
+python scripts/defense/run_adaptive_cost.py --skip-warning-time
+python scripts/defense/run_adaptive_cost.py --smoke
+python scripts/defense/run_adaptive_cost.py --no-verify-digests
+```
+
+Config: `configs/defense/adaptive_cost.yaml`. Library:
+`counterusv.eval.adaptive_cost`.
+
+Outputs: `results/adaptive_cost/adaptive_cost_{joined,curves,warning}.parquet`,
+`adaptive_cost_report.md`, `adaptive_cost_summary.json`.
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_adaptive_cost.py`.
+
+## Engagement geometry — defended-asset contract
+
+`configs/defense/engagement_geometry.yaml` locks the asset point, engagement
+annulus, inbound-leg definition, and multi-port placement policy used by the
+geometry feature arm and the adversary motion model. Rationale (why this is
+not `range_to_shore`): [`docs/ENGAGEMENT_GEOMETRY.md`](../docs/ENGAGEMENT_GEOMETRY.md).
+
+Placement classes are defended-asset archetypes (ship at a berth, ship at
+anchor, offshore terminal, plus a deliberately adversarial fairway placement
+that is scored but never fit). `fit_population()` returns the archetypes whose
+encounters train the geometry envelopes.
+
+```python
+from counterusv.defense import load_engagement_geometry
+cfg = load_engagement_geometry()
+cfg.max_range_nm, cfg.port_regions(), cfg.placement_classes()
+cfg.fit_population()   # ['berth_approach', 'anchorage']
+```
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_engagement_geometry.py`.
+
+### Materialize placements + extract geometry features
+
+```bash
+# Digested 5×4 placements table (SHA-256 pin before any fit/FAR)
+python scripts/defense/materialize_placements.py
+python scripts/defense/materialize_placements.py --smoke   # miami_approach only
+
+# Encounter-paired asset-relative windows (leaves kinematics parquets untouched)
+python scripts/defense/extract_geometry_features.py
+python scripts/defense/extract_geometry_features.py --smoke
+python scripts/defense/extract_geometry_features.py --windows 300 600
+```
+
+Writes under `data/defense/`:
+
+| Artifact | Path |
+|---|---|
+| Placements | `placements.parquet` + `placements_digest.json` + `placements_report.md` |
+| Geometry windows | `features_geometry_window_{W}s.parquet` |
+| Coverage | `geometry_coverage_report.md` (+ `.json`) |
+
+Pure-function API: `counterusv.defense.geometry_features_from_points`.
+Unit tests: `tests/test_geometry_features.py`, `tests/test_placements_materialize.py`.
 
 ## `behavior/freeze_behavior_model.py` — pin the scorer for downstream
 
-Attests the benign-only firewall on the train manifest, digests configs +
-envelope bundles, and writes the freeze + model card.
+Attests the benign-only firewall on the train manifest, records config paths
+(git owns configs), digests envelope bundles, and writes the freeze + model card.
 
 ```bash
 python scripts/behavior/freeze_behavior_model.py
@@ -537,8 +811,6 @@ python scripts/data/build_splits.py --eval-sources seaships smd # usv always add
 - **AIS** (`data/splits/ais_track_splits.csv`): **vessel-disjoint** by MMSI (`mmsi==0`
   train-only); `region`/`geo_cell`/`start_day` tags support a region/time-holdout eval. The
   one-class benign scorer consumes `role==benign` only.
-- **SMD video** (`data/splits/video_eval_pool.csv`): separate **held-out non-cooperative**
-  eval pool, grouped by clip; never mixed into AIS training.
 - `data/splits/splits_summary.json` + `results/splits/report.md` — counts, per-source/class
   × split tables, and the leakage-check result. Version = date + input-md5 + git SHA.
 
@@ -563,7 +835,7 @@ class-conditional kinematic features. Outputs:
 - `data/tracks/tracks_ais.parquet` — one row per trip-level track (class + features +
   provenance); the named deliverable, feeds the benign-behavior model.
 - `data/tracks/tracks_ais_points.parquet` — cleaned, thinned point-level tracks for
-  windowed / time-to-flag scoring .
+  windowed / time-to-flag scoring.
 - `results/ais_ingest/report.md` + `summary.json` + `figures/*.png` — Class-B share
   and carriage/self-report bias reported honestly.
 
@@ -571,55 +843,16 @@ Per-column definitions (dtype, units, caveats) for both parquets are in
 [`../docs/DATA_DICTIONARY.md`](../docs/DATA_DICTIONARY.md).
 
 `range_to_shore` is intentionally not computed (AIS ingestion: encodes geography, not
-behavior). The **DMA** (Danish) archives on disk use a text ship-type schema and are
-a clean future adapter — only the MarineCadastre adapter is wired.
-
-## `data/ingest_smd_tracks.py` — video-derived non-cooperative tracks
-
-The **runtime-representative** trajectory check: shore-camera tracks of *non-
-transmitting* craft (the realistic counter-USV sensing situation, unlike cooperative
-AIS), used to expose AIS carriage bias — as far as the camera geometry defensibly
-allows. Identity comes from SMD on-shore `TrackGT` (one `Track` element = one
-persistent object); cleaner 7-class labels are **transferred from SMD-Plus `ObjectGT`
-by framewise IoU** (mapped through `taxonomy.yaml` `smd_plus`), falling back to the
-track's own original-SMD label when unmatched.
-
-```bash
-python scripts/data/ingest_smd_tracks.py # all SMD on-shore TrackGT clips
-python scripts/data/ingest_smd_tracks.py --iou 0.3 # label-transfer IoU threshold
-python scripts/data/ingest_smd_tracks.py --feature-hz 3 # kinematics resample cadence (Hz)
-```
-
-**World-frame calibration gate:** SMD ships a per-frame horizon line (`HorizonGT`) but
-no intrinsics, camera height, or ground-control points, so a defensible water-plane
-homography cannot be built. The gate **fails** → only **scale-normalized image-plane**
-features are kept (body-lengths/s speed, turn rate, straightness, loiter, aspect,
-size-trend; also the PercepGuard-style baseline input). A horizon-relative vertical
-position is emitted as an **ordinal** pseudo-range, flagged non-metric. These are
-**not** claimed to validate AIS metric speed / turn-rate envelopes.
-
-Kinematics are computed at a **3 Hz resample** (raw 30 fps gives sub-pixel steps for
-distant objects → noise). Outputs:
-- `data/tracks/tracks_video.parquet` — one row per video track (features + class + role +
-  `world_frame_calibratable=False` context in the report).
-- `data/tracks/tracks_video_points.parquet` — per-frame image-plane centroids.
-- `results/smd_tracks/report.md` + `summary.json` + `figures/*.png` — class-transfer
-  rates, calibration-gate outcome, coverage, and the AIS time-horizon limitation.
-
-**Not pooled with AIS:** the time-horizon/sampling mismatch (SMD ~7-20 s @30 fps vs
-AIS minutes-hours @60 s) means no shared observation window. SMD is a held-out
-non-cooperative sensitivity pool , compared to the AIS-learned envelope only at
-the short-horizon feature-distribution level.
-
-Per-column definitions (dtype, units, caveats) for both parquets are in
-[`../docs/DATA_DICTIONARY.md`](../docs/DATA_DICTIONARY.md).
+behavior). Only the MarineCadastre adapter is wired.
 
 ## `data/package_derived.py` — version + checksum the derived release
 
-Checksums every redistributable derived artifact (annotations, audit/eval/split
-manifests, trajectory parquets, taxonomy, harmonization contract, data card, USV
-provenance manifest) and writes a release stamp. **Does not** package raw EO
-imagery or bulk AIS feeds.
+Checksums every redistributable derived artifact (annotations **except McShips**,
+audit/eval/split manifests, trip-level trajectory parquets, behavior/defense
+features, taxonomy, harmonization contract, data cards, USV provenance manifest)
+and writes a release stamp. **Does not** package raw EO imagery, bulk AIS feeds,
+point-level AIS (`tracks_ais_points.parquet`), McShips annotations, or model
+weights.
 
 ```bash
 python scripts/data/package_derived.py           # write CHECKSUMS.derived.sha256 + RELEASE.json
@@ -632,6 +865,24 @@ Outputs:
 
 See `data/DATACARD_EO.md` and `data/DATACARD_TRACKS.md` for the human-readable data
 cards (`data/DATACARD.md` is a thin index over both).
+
+## `release/build_bundle.py` — weight-free Zenodo data/results bundle
+
+Stages the derived inventory (with release transforms), evaluation freezes,
+summaries, and `results/paper/` under `dist/release/stage/`, then writes
+`RELEASE.json`, `CHECKSUMS.sha256`, `ARTIFACT_README.md`, and a `.tar.gz`.
+
+Transforms (staging only — local `data/` unchanged): drop `mmsi` columns; strip
+McShips rows from `coco_master` / audit CSVs. Redaction gate fails if any weight
+binary or patch bank lands in the staged tree.
+
+```bash
+python scripts/release/build_bundle.py
+python scripts/release/build_bundle.py --verify   # checksums + no-weights
+```
+
+Companion to the GitHub code DOI: this archive is the data/results Zenodo deposit.
+Model weights are withheld (see `docs/DUAL_USE.md`).
 
 ## `attacks/render_marine_eot_grid.py` — marine-EOT sample grid
 
@@ -706,8 +957,8 @@ inside tmux).
 ```bash
 python scripts/attacks/run_evasion.py --dry-run                 # slice + wiring only
 python scripts/attacks/run_evasion.py --max-images 3 --steps 30 # quick smoke (CPU/MPS)
-# On RunPod (GPU):
-python scripts/attacks/run_evasion.py --family yolo11s --device 0
+# On RunPod (GPU; --save-patches exports patch_bank/ for transfer):
+python scripts/attacks/run_evasion.py --family yolo11s --device 0 --save-patches
 ```
 
 Writes `results/attacks/evasion/<family>/report.md`, `esr_by_severity.json`,
@@ -734,7 +985,7 @@ White-box hostile→benign patches on the `usv` test slice (`counterusv.attacks.
 python scripts/attacks/run_disguise.py --dry-run
 python scripts/attacks/run_disguise.py --max-images 2 --steps 20 --benign-class fishing
 # On RunPod:
-python scripts/attacks/run_disguise.py --family yolo11s --device 0
+python scripts/attacks/run_disguise.py --family yolo11s --device 0 --save-patches
 ```
 
 Writes `results/attacks/disguise/<family>/<benign>/` and `<family>/summary.md`.
@@ -745,3 +996,88 @@ Writes `results/attacks/disguise/<family>/<benign>/` and `<family>/summary.md`.
 ```
 
 Unit tests: `PYTHONPATH=src python -m pytest tests/test_disguise.py`.
+
+## `attacks/run_transfer.py` — access-level transfer (grey / black-box)
+
+Hard-eval saved patch banks on other detectors (`configs/attacks/access_levels.yaml`).
+**Grey-box** = yolo11s ↔ yolo11l; **black-box** = YOLO → `rtdetr_l`. No re-optimize.
+Requires craft with `--save-patches` first.
+
+```bash
+python scripts/attacks/run_transfer.py --attack evasion --surrogate yolo11s --dry-run
+python scripts/attacks/run_transfer.py --attack evasion --surrogate yolo11s --device 0
+python scripts/attacks/run_transfer.py --attack disguise --surrogate yolo11s \
+  --benign-class fishing --device 0
+```
+
+Writes `results/attacks/transfer/<attack>/<surrogate>_to_<target>/`.
+
+```bash
+./scripts/attacks/sync_transfer_runpod.sh root@<IP>:/workspace/counterUSV
+# On pod: bash scripts/attacks/setup_runpod_transfer.sh
+```
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_transfer.py`.
+
+## `attacks/run_oracle.py` — perfect-disguise oracle (no-patch assertion)
+
+Emits benign class assertions for hostile `usv` contacts without modifying
+pixels (`configs/attacks/oracle.yaml` → `counterusv.attacks.oracle`). Models an
+ideal patch / zero-tech visual disguise for the oracle DDR condition.
+
+```bash
+python scripts/attacks/run_oracle.py --dry-run
+python scripts/attacks/run_oracle.py --benign-class fishing
+python scripts/attacks/run_oracle.py --all-benigns
+```
+
+Writes `results/attacks/oracle/<benign>/assertions.json` + `report.md`.
+
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_oracle.py`.
+
+## `attacks/freeze_attacks.py` — EO attack artifact v1 freeze
+
+Records attack config paths (git owns configs), pins SHA-256 digests of
+headline ESR/TMSR/transfer/oracle results, builds an illustrative sample
+gallery, and records dual-use redaction of raw patch tensors (`docs/DUAL_USE.md`).
+Scope is EO-only (no motion model).
+
+```bash
+python scripts/attacks/freeze_attacks.py
+python scripts/attacks/freeze_attacks.py --skip-gallery   # digests + notes only
+```
+
+Writes `results/attacks/FROZEN.json`, `RELEASE_NOTES.md`, `REDACTION.md`, and
+`artifact_v1/gallery/` (composited scenes — not printable patch templates).
+
+## `attacks/generate_adversary_tracks.py` — hostile / adaptive motion sweep
+
+Materializes the eval-only two-phase adversary motion model relative to frozen
+fit-population placements. Emits AIS-cadence world-frame points
+(`trip_id/t/lat/lon/sog/cog`) under `results/adversary_motion/` and
+**SHA-256 freezes the sweep cell table before any DDR scoring**. Never writes
+into `data/behavior/` or defense train tables.
+
+```bash
+python scripts/attacks/generate_adversary_tracks.py          # full freeze + points
+python scripts/attacks/generate_adversary_tracks.py --smoke  # tiny grid (wiring)
+python scripts/attacks/generate_adversary_tracks.py --skip-points
+```
+
+Writes `sweep_cells.parquet`, `tracks_points.parquet`, `tracks_meta.json`, and
+`FROZEN_SWEEP.json` (smoke writes `FROZEN_SWEEP_smoke.json` so it cannot
+overwrite the headline freeze). Library: `counterusv.attacks.kinematics`.
+
+## `attacks/validate_adversary_motion.py` — generator validity (no DDR)
+
+Dynamics caps, post-thin cadence (~60 s), kinematics + geometry extractability
+(geometry primary window **600 s**), negative-control ≈ FAR smoke on both
+arms, and class-contrast smoke. **Does not claim DDR or cost curves.**
+
+```bash
+python scripts/attacks/validate_adversary_motion.py
+python scripts/attacks/validate_adversary_motion.py --smoke
+```
+
+Writes `results/adversary_motion/validity_report.md` + `validity_summary.json`.
+Unit tests: `PYTHONPATH=src python -m pytest tests/test_adversary_kinematics.py`.

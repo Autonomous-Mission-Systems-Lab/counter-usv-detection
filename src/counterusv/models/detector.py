@@ -1,6 +1,6 @@
 """Frozen detector baselines — canonical inference interface.
 
-Downstream attacks (Phase 4) and the class–kinematics defense (Phase 5) consume
+Downstream EO attacks and the class–kinematics consistency defense consume
 detections as ``(box, score, canonical_class)``. This module wraps Ultralytics
 YOLO11 / RT-DETR so every family emits that interface with taxonomy names and
 roles (hostile / benign / non_target), not framework-local class indices.

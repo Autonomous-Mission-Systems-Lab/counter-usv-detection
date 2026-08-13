@@ -6,7 +6,7 @@ self-contained data card:
 - **[`DATACARD_EO.md`](DATACARD_EO.md)** — harmonized maritime EO **object-detection**
   dataset (SeaShips, McShips, ABOShips, SMD frames + a curated `usv` class), COCO format.
 - **[`DATACARD_TRACKS.md`](DATACARD_TRACKS.md)** — derived **vessel trajectory** features
-  (AIS voyage tracks + shore-camera video-derived tracks), Parquet.
+  (MarineCadastre AIS voyage tracks), Parquet.
 
 The two may be released separately. Shared conventions:
 

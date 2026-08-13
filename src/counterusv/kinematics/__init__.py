@@ -1,6 +1,6 @@
 """Track-kinematics and benign-behavior modeling.
 
-Ingests real vessel trajectories (AIS archives + video-derived tracks), derives
+Ingests real vessel trajectories (MarineCadastre AIS archives), derives
 class-conditional kinematic features, and fits the one-class benign-behavior model
 the class-kinematics consistency defense scores against. The benign model is trained
 on real benign tracks only; hostile/adaptive trajectories are synthesized at

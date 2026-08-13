@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provenance-first curation kit for the ``usv`` EO imagery set .
+"""Provenance-first curation kit for the ``usv`` EO imagery set.
 
 This tool is a **manifest-first curation kit**, not a downloader:
 

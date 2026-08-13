@@ -14,12 +14,10 @@ Layout produced::
 
     data/raw/
       seaships/ # SeaShips imagery + VOC annotations
-      mcships/ # McShips 9k "lite" (CC BY-NC-ND / academic research; no re-host)
+      mcships/ # McShips 9k "lite" (no stated license; citation requested; no re-host)
       smd/ # Singapore Maritime Dataset (video) + SMD-Plus labels
       aboships/ # ABOShips (Zenodo rec. 4736931)
       ais/marinecadastre/ # US AIS daily zips (NOAA OCM)
-      ais/dma/ # Danish Maritime Authority AIS daily zips
-      ais/gfw/ # Global Fishing Watch (manual; account required)
       CHECKSUMS.sha256 # appended as files land, for the data card
 
 Examples
@@ -73,7 +71,7 @@ USER_AGENT = "counterUSV-fetch/1.0 (+research; contact repo maintainer)"
 CHUNK = 1 << 20 # 1 MiB
 
 # Set to an unverified ssl.SSLContext by --insecure (last resort for providers
-# with broken certs, e.g. DMA's web.ais.dk hostname mismatch). None = verify.
+# with broken certs). None = verify.
 SSL_CONTEXT: ssl.SSLContext | None = None
 
 
@@ -127,11 +125,12 @@ SOURCES: dict[str, dict] = {
     "mcships": {
         "category": "eo",
         "kind": "gdrive",
-        "auto": False, # Baidu/GDrive gated; CC BY-NC-ND
+        "auto": False, # Baidu/GDrive gated; no stated license
         "subdir": "mcships",
-        "license": "CC BY-NC-ND (or equivalent academic research license) — "
-        "non-commercial, no derivatives of the dataset; attribution required. "
-        "No re-host; keep McShips-derived annotation products separable/omittable.",
+        "license": "No stated license from the authors' distribution "
+        "(Zheng & Zhang, ICME 2020); citation requested. Do not re-host imagery. "
+        "McShips-derived annotations are omitted from the permissive release slice "
+        "(see docs/DATA_LICENSES.md).",
         "gdrive_id": "1udewXbHCS9WKM-MPpWqouUUGs6Vx5iWf", # 9k "lite" subset
         "manual": [
             "McShips 9k 'lite' (Pascal-VOC). Two provider options:",
@@ -139,10 +138,9 @@ SOURCES: dict[str, dict] = {
             " (auto-download works if `pip install gdown`; then re-run this source)",
             " - Baidu Yun: https://pan.baidu.com/s/1rDeiCPX4EdRUvBl5jnWqDQ password: dqwu",
             "Repo/citation: https://github.com/ZhengYitong2333/Mcships",
-            "License: CC BY-NC-ND (or equivalent academic research) — NC + ND.",
-            "Local academic training/eval is in scope; do not redistribute imagery.",
-            "Adapted annotation exports may conflict with ND — keep them separable/"
-            "omittable from any permissive release (see docs/DATA_LICENSES.md).",
+            "License: none stated by the authors (citation of Zheng & Zhang, ICME 2020).",
+            "Train-only in our splits; do not redistribute imagery. Derived "
+            "annotations are omitted from the permissive release (see docs/DATA_LICENSES.md).",
         ],
     },
     "smd": {
@@ -160,7 +158,8 @@ SOURCES: dict[str, dict] = {
             " 2) SMD-Plus cleaned labels (7 classes; what taxonomy.yaml maps):",
             " https://github.com/kjunhwa/SMD-Plus (git clone into smd/SMD-Plus)",
             "Place videos under data/raw/smd/videos and SMD-Plus GT under "
-            "data/raw/smd/SMD-Plus. On-shore subset only is required (eval-slice and detector training).",
+            "data/raw/smd/SMD-Plus. On-shore subset only is required "
+            "(detection frames for the EO master / eval slice).",
         ],
     },
     # ---- Trajectory (AIS) sources ---------------------------------------
@@ -174,42 +173,11 @@ SOURCES: dict[str, dict] = {
         # Daily national zips: AIS_YYYY_MM_DD.zip
         "url_template": "https://coast.noaa.gov/htdata/CMSP/AISDataHandler/{y}/AIS_{y}_{m:02d}_{d:02d}.zip",
         "note": "Daily national files are large (~hundreds of MB/day). Pick a short "
-        "window; region-filter during cleaning (SMD video-track ingestion).",
-    },
-    "dma_ais": {
-        "category": "ais",
-        "kind": "ais_daily",
-        "auto": True,
-        "subdir": "ais/dma",
-        "license": "Free historical open data (Danish PSI act). No re-identification "
-        "of individuals; provided without warranty. Historical CSV only.",
-        # Daily zips: aisdk-YYYY-MM-DD.zip. Served over http (the https cert on
-        # web.ais.dk has a hostname mismatch); use --insecure if you must use https.
-        "url_template": "http://web.ais.dk/aisdata/aisdk-{y}-{m:02d}-{d:02d}.zip",
-        "note": "Daily files are large. web.ais.dk's HTTPS cert is broken (hostname "
-        "mismatch) so we use http; if that fails, browse http://web.ais.dk/aisdata/ "
-        "directly, or retry with --insecure. Monthly archives also exist there.",
-    },
-    "gfw": {
-        "category": "ais",
-        "kind": "manual",
-        "auto": False, # account + API token + ToS
-        "subdir": "ais/gfw",
-        "license": "CC BY-NC 4.0 — NON-COMMERCIAL; attribution required. Any "
-        "GFW-derived feature carries this restriction (keep separable).",
-        "manual": [
-            "Global Fishing Watch — requires a free account + ToS acceptance.",
-            " 1) Register: https://globalfishingwatch.org/our-apis/ (get an API token)",
-            " 2) Pull via the GFW API or the public datasets (fishing-effort / "
-            "AIS-derived behavior). The `gfwr` (R) or REST API are the supported paths.",
-            " 3) Save derived tracks/events under data/raw/ais/gfw/.",
-            "NON-COMMERCIAL: released features derived from GFW must be omittable "
-            "from any commercial-friendly artifact (see DATA_LICENSES.md).",
-        ],
+        "window; region-filter during cleaning if needed.",
     },
 }
 
-AUTO_ORDER = ["seaships", "aboships", "marinecadastre_ais", "dma_ais"]
+AUTO_ORDER = ["seaships", "aboships", "marinecadastre_ais"]
 
 
 # ---------------------------------------------------------------------------
@@ -455,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="re-download existing files")
     p.add_argument("--insecure", action="store_true",
                    help="disable TLS verification (last resort for providers with "
-                        "broken certs, e.g. DMA's web.ais.dk)")
+                        "broken certs)")
     args = p.parse_args(argv)
 
     if args.insecure:

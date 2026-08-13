@@ -287,7 +287,8 @@ rsync -avh --no-owner --no-group -e "$RSYNC_RSH" \
 python scripts/attacks/run_evasion.py --family yolo11l --device 0
 ```
 
-Black-box transfer to `rtdetr_l` is a later access-level step — not this run.
+Black-box transfer to `rtdetr_l` is covered under **Access-level transfer** below
+(re-craft with `--save-patches`, then `run_transfer.py`).
 
 ## Disguise attack (TMSR) on RunPod
 
@@ -335,6 +336,67 @@ rsync -avh --no-owner --no-group -e "$RSYNC_RSH" \
   results/attacks/disguise/
 ```
 
+## Access-level transfer (grey / black-box) on RunPod
+
+White-box ESR/TMSR craft on a surrogate, then **hard-eval the same patches** on
+other detectors (no re-optimization). Requires a **patch bank** from craft with
+`--save-patches`.
+
+| Level | Craft | Eval |
+|---|---|---|
+| white | yolo11s (or l) | same family (existing craft report) |
+| grey | yolo11s | yolo11l (and reverse) |
+| black | yolo11s or l | held-out `rtdetr_l` |
+
+### Laptop → pod
+
+```bash
+export RSYNC_RSH='ssh -T -p <PORT> -i ~/.ssh/runpod -o RequestTTY=no'
+# Fresh pod: EO bundle first, then:
+./scripts/attacks/sync_transfer_runpod.sh root@<IP>:/workspace/counterUSV
+```
+
+Syncs code + **all three** frozen weights (`yolo11s`, `yolo11l`, `rtdetr_l`).
+
+### On-pod
+
+```bash
+cd /workspace/counterUSV
+bash scripts/attacks/setup_runpod_transfer.sh
+source .venv/bin/activate
+apt-get update -qq && apt-get install -y -qq tmux rsync   # if missing
+tmux new -s transfer
+
+# 1) Re-craft with patch export (GPU; prior runs lacked patch_bank/)
+python scripts/attacks/run_evasion.py --family yolo11s --device 0 --save-patches
+python scripts/attacks/run_evasion.py --family yolo11l --device 0 --save-patches
+
+# Optional disguise banks (white-box TMSR was 0%; still fills the protocol):
+python scripts/attacks/run_disguise.py --family yolo11s --device 0 --save-patches --benign-class fishing
+
+# 2) Transfer eval (forward-only; default targets = grey peer + rtdetr_l)
+python scripts/attacks/run_transfer.py --attack evasion --surrogate yolo11s --device 0
+python scripts/attacks/run_transfer.py --attack evasion --surrogate yolo11l --device 0
+python scripts/attacks/run_transfer.py --attack disguise --surrogate yolo11s \
+  --benign-class fishing --device 0
+```
+
+Outputs → `results/attacks/transfer/{evasion,disguise}/<surrogate>_to_<target>/`
+plus per-surrogate `*_summary.md`. Transfer gap vs white-box is in each
+`report.md` when the craft `*_by_severity.json` is present.
+
+### Pull
+
+```bash
+rsync -avh --no-owner --no-group -e "$RSYNC_RSH" \
+  root@<IP>:/workspace/counterUSV/results/attacks/transfer/ \
+  results/attacks/transfer/
+# Keep patch banks with the craft trees if you want them locally:
+rsync -avh --no-owner --no-group -e "$RSYNC_RSH" \
+  root@<IP>:/workspace/counterUSV/results/attacks/evasion/ \
+  results/attacks/evasion/
+```
+
 ## Laptop checklist before paying for GPU time
 
 ```bash
@@ -360,5 +422,6 @@ python scripts/attacks/run_evasion.py --dry-run
 | `Connection reset` / `Broken pipe` mid-train | Training was in the SSH foreground. Check `nvidia-smi` / `ps`; if dead, `tmux new -s train` then `python scripts/detector/train_detector.py --all --resume`. Always use tmux/nohup for long runs. Same for evasion (`tmux new -s evasion`). |
 | `Disk quota exceeded` | Enlarge network volume (≥40 GB); `rm -rf /workspace/.cache/pip /workspace/tmp/*`. |
 | `FileNotFoundError` on freeze weights | Sync `results/detector_baselines/<family>/weights/best.pt` + `FROZEN.json` via `sync_evasion_runpod.sh`. Absolute Mac paths in the freeze are OK — loader falls back to `weights_rel`. |
-| `PermissionError` crafting on `rtdetr_l` | Expected — held-out transfer target. Craft on `yolo11s` / `yolo11l` only. |
+| `PermissionError` crafting on `rtdetr_l` | Expected — held-out transfer target. Craft on `yolo11s` / `yolo11l` only; eval via `run_transfer.py`. |
+| Transfer: `patch bank manifest missing` | Re-run craft with `--save-patches` before `run_transfer.py`. |
 | Evasion dry-run: 0 targets | `data/raw/usv/` missing on the pod — re-sync the EO train bundle. |

@@ -32,5 +32,22 @@ Training workflow (RunPod): [`docs/RUNPOD.md`](RUNPOD.md).
 
 ## Scope
 - This is a **thin slice**, not a full transferability matrix, and is reported as such.
-- Grey-box (same family, unknown weights) is the default realistic case; black-box transfer (cross-family) is the harder check and its numbers are expected to be weaker.
+- **White-box** (upper bound): craft and score on the same surrogate weights (`yolo11s` or `yolo11l`). Already measured for ESR/TMSR in the evasion/disguise runners.
+- **Grey-box** (default realistic case): architecture family known, weights unknown. Instantiated here as **cross-scale YOLO transfer** — craft on `yolo11s`, hard-eval on `yolo11l` (and the reverse). Same patches; no gradients on the target.
+- **Black-box transfer** (cross-family): craft on a YOLO surrogate, evaluate on held-out `rtdetr_l`. Numbers are expected to be weaker than white/grey.
 - Data-source hold-out (train on sources A/B, transfer-test on source C) guards against dataset-specific overfitting; sequence-level (video) and MMSI/region-level (AIS tracks) split discipline ensures no leakage.
+
+## Patch bank (required for grey/black eval)
+
+White-box craft must be re-run with `--save-patches` so each surrogate writes
+`results/attacks/<attack>/<surrogate>/patch_bank/` (attacked letterbox PNGs +
+patch tensors + manifest). Transfer scoring loads that bank and never
+re-optimizes:
+
+```bash
+python scripts/attacks/run_evasion.py --family yolo11s --device 0 --save-patches
+python scripts/attacks/run_transfer.py --attack evasion --surrogate yolo11s --device 0
+```
+
+Config: `configs/attacks/access_levels.yaml`. Runner: `scripts/attacks/run_transfer.py`.
+RunPod: `docs/RUNPOD.md` § Access-level transfer.

@@ -12,9 +12,9 @@ are in `CHECKSUMS.derived.sha256`; the version stamp is `RELEASE.json`.
 
 **Release policy.** Redistributed products are **annotations, split manifests,
 audit/eval manifests, the taxonomy, and this card** — never raw imagery. Source terms
-govern (see `docs/DATA_LICENSES.md`). **McShips is CC BY-NC-ND** (non-commercial, no
-derivatives): do not re-host its imagery, and keep McShips-derived annotation products
-separable/omittable from any permissive release.
+govern (see `docs/DATA_LICENSES.md`). McShips has **no stated license** from the authors'
+distribution: do not re-host its imagery, and **omit** McShips-derived annotation
+products from the permissive release slice (regenerate locally via `fetch_data.py`).
 
 ---
 
@@ -37,7 +37,7 @@ separable/omittable from any permissive release.
 | Source | Images | Boxes | Viewpoint | License (summary) |
 |---|---:|---:|---|---|
 | SeaShips | 7,000 | 9,221 | Shore coastline surveillance | Academic; CC BY 4.0 (mirror) |
-| McShips (9k lite) | 7,996 | 11,330 | Web / in-the-wild | **CC BY-NC-ND** / academic |
+| McShips (9k lite) | 7,996 | 11,330 | Web / in-the-wild | No stated license (citation requested) |
 | ABOShips (original) | 9,041 | 41,967 | Onboard moving vessel | CC BY 4.0 (Zenodo 4736931) |
 | SMD on-shore (sampled) | 964 | 8,683 | Fixed shore platform | Academic / research |
 | Curated `usv` | 261 | 300 | Shore (curated web/video stills) | Per-image provenance; link-only |
@@ -145,8 +145,8 @@ pipeline change. Prefer regenerating derived artifacts over hand-editing JSON/CS
 3. **Class imbalance** — large-vessel classes dominate; several small-craft classes and
    `usv` are thin. Report per-class AP.
 4. **`recreational` has no shore-viewpoint eval** (100% onboard/train-only).
-5. **McShips is CC BY-NC-ND** — non-commercial, no dataset derivatives; keep
-   McShips-derived annotations separable/omittable and never re-host imagery.
+5. **McShips has no stated license** — train-only; omit derived annotations from the
+   permissive release and never re-host imagery (see `docs/DATA_LICENSES.md`).
 6. **USV provenance licenses pending backfill** — platform + source URL are recorded;
    full per-image license/attribution fields may still be empty in the manifest.
 

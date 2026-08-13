@@ -54,6 +54,11 @@ from counterusv.attacks.evasion import (  # noqa: E402
 )
 from counterusv.attacks.marine_eot import MarineEOT  # noqa: E402
 from counterusv.attacks.patch import load_patch_config  # noqa: E402
+from counterusv.attacks.transfer import (  # noqa: E402
+    patch_bank_dir,
+    save_patch_bank_entry,
+    write_patch_bank_manifest,
+)
 from counterusv.data.letterbox import letterbox_image, remap_boxes  # noqa: E402
 
 DEFAULT_OUT = REPO_ROOT / "results" / "attacks" / "evasion"
@@ -277,6 +282,10 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--dry-run", action="store_true",
                     help="load the slice + report wiring; no model / optimize")
+    ap.add_argument(
+        "--save-patches", action="store_true",
+        help="write patch_bank/ (attacked PNGs + patch tensors) for transfer eval",
+    )
     args = ap.parse_args()
 
     from counterusv.attacks.evasion import load_evasion_config
@@ -351,6 +360,8 @@ def main() -> int:
     )
 
     results = []
+    bank_rows: list[dict] = []
+    bank = patch_bank_dir(out_dir) if args.save_patches else None
     craft_device = attacker.surrogate.device
     for i, t in enumerate(targets):
         rng = np.random.default_rng(seed + i)
@@ -381,6 +392,15 @@ def main() -> int:
             attack_loss_final=history[-1]["attack"] if history else None,
         )
         results.append(res)
+        if bank is not None:
+            bank_rows.append(save_patch_bank_entry(
+                bank,
+                image_id=t["image_id"],
+                target_xyxy=target_xyxy,
+                placement=placement,
+                attacked_rgb=patched_rgb,
+                patch_chw=patch.detach().clamp(0, 1).cpu().numpy(),
+            ))
         if i < args.gallery:
             save_gallery(out_dir / "gallery", t["image_id"], canvas_rgb,
                          patched_rgb, target_xyxy, placement)
@@ -389,6 +409,22 @@ def main() -> int:
               f"loss {res.attack_loss_init:.3f}→{res.attack_loss_final:.3f} "
               f"L0_suppressed={not res.attacked.get(f'{axes[0]}:L0',{}).get('detected', True)}",
               flush=True)
+
+    if bank is not None:
+        write_patch_bank_manifest(
+            bank,
+            attack="evasion",
+            surrogate=family,
+            instances=bank_rows,
+            extra={
+                "seed": seed,
+                "steps": steps,
+                "lr": lr,
+                "target_class": cfg.target_class,
+                "input_size": input_size,
+            },
+        )
+        print(f"[evasion] wrote patch bank → {bank.relative_to(REPO_ROOT)}")
 
     esr = aggregate_esr(results)
     n_attackable = sum(1 for r in results if r.clean_detected)

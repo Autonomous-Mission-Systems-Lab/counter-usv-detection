@@ -1,7 +1,7 @@
 # Counter-USV adversarial robustness — Python dependencies.
 # Versions are intentionally left unpinned until the first working install on the
 # target machine, then pin with `pip freeze > requirements.lock.txt`.
-# Target: Python 3.10+ with a CUDA-enabled PyTorch build (single GPU).
+# Target: Python 3.10+ with a CUDA-enabled PyTorch build recommended for training.
 
 # Core numerics / data
 numpy

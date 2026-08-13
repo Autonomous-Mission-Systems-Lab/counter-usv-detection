@@ -162,51 +162,40 @@ defined identically where comparable and kept apart where not.
 
 - **Time:** int64 Unix epoch seconds, UTC. `duration_s = t_end − t_start`.
 - **Coordinates:** decimal degrees, WGS-84; longitude in [−180, 180].
-- **Speed:** **knots** for AIS (metric, world-frame). Video speeds are **body-lengths/s**
-  (`*_bl_s`, scale-normalized) or pixels/s (`*_px_s`) — **non-metric**.
+- **Speed:** **knots** for AIS (metric, world-frame).
 - **Angles / course / heading:** degrees in [0, 360); **circular statistics** for course
   (359° and 1° are adjacent). Turn rates in degrees/second.
 - **Nulls (`NaN`) mean "not computable / not reported," never zero.** They arise from
   single-point bins, AIS "not available" sentinels (e.g. SOG 102.3), or missing Class-B
   heading. **Consumers must mask, not fill with 0.**
-- **Identity keys:** AIS = (`mmsi`, `trip_id`); video = `track_id` (`clip#obj_index`).
+- **Identity keys:** AIS = (`mmsi`, `trip_id`).
 
 ### B.2 Resampling cadence & observation window
 
 - **AIS:** native ~1 min; cleaned to a 60 s cadence (one point per (MMSI, 60 s) bin);
   trips cut at >30 min gaps. The scorer resamples to `kinematics.resample_seconds = 30`.
-- **SMD video:** raw 30 fps → **3 Hz** feature resample (raw fps gives sub-pixel jitter for
-  distant objects). Reported as `feature_hz`.
 - **Observation window:** `kinematics.observation_window_s = 300` s of history is the
   default for a consistency decision, **swept** in eval for the time-to-flag vs. false-alarm
-  curve. NB: 300 s exceeds every SMD clip (~7–20 s), so SMD informs only the **short end** of
-  that curve.
+  curve.
 
-### B.3 World-frame calibration gate (metric vs. image-plane)
-
-The gate separates world-frame, AIS-comparable features from image-plane-only features.
+### B.3 World-frame features
 
 - **AIS features are metric / world-frame** (knots, km, deg/s) → directly usable by the
   scorer and for FAR on held-out AIS tracks.
-- **SMD video FAILED the world-frame calibration gate** (`world_frame_calibratable=False`:
-  no intrinsics / camera height / ground-control points → no defensible water-plane
-  homography). Therefore SMD emits **image-plane, scale-normalized (non-metric)** features
-  only; `horizon_rel_y_px` is an **ordinal pseudo-range**, flagged non-metric.
-- **Do not pool SMD with AIS**, and do not apply the AIS metric scorer to SMD coordinates.
-  SMD is a **held-out non-cooperative sensitivity pool** (and PercepGuard-style baseline
-  input), compared to the AIS envelope only at the **short-horizon feature-distribution**
-  level — never as a metric speed/turn-rate validation. FAR on video is reported separately
-  and only for features that pass the gate; since none do metrically, AIS carriage bias is
-  retained as an explicit unresolved limitation (`docs/METRICS.md`).
+- **Carriage / self-report bias** (non-transmitting craft absent; ship type self-reported)
+  is an explicit unresolved limitation of the AIS-only corpus (`docs/METRICS.md`).
 
 ### B.4 Scorer feature set
 
 Canonical benign-behavior features are frozen in
-`configs/defense/scorer_features.yaml` (`configs/base.yaml → kinematics.feature_spec`
+`configs/defense/scorer_features.yaml` **v2** (`configs/base.yaml → kinematics.feature_spec`
 points here; no mirrored feature list). The model fit uses a deduplicated
-core/course subset in `configs/defense/behavior_model.yaml → features`. All
-contract features are derivable from `tracks/tracks_ais.parquet` (see
-`docs/DATA_DICTIONARY.md` for exact columns):
+core/course subset in `configs/defense/behavior_model.yaml → features`.
+Kinematic contract features are derivable from `tracks/tracks_ais.parquet` (see
+`docs/DATA_DICTIONARY.md` for exact columns). Asset-relative encounter features
+require a named defended asset and are extracted from
+`tracks/tracks_ais_points.parquet` via `counterusv.defense.geometry_features`;
+placement coordinates live in `data/defense/placements.parquet` (digested).
 
 **Core (always used; NaN → mask, never fill 0):**
 - `speed_mean/med/p95/max/std` (← `sog_*`, kn)
@@ -218,9 +207,20 @@ contract features are derivable from `tracks/tracks_ais.parquet` (see
 - `turn_rate` / `turn_rate_p95` (← `turn_rate_*_dps`, deg/s)
 - `cog_circ_std` (← `cog_circ_std_deg`, deg)
 
+**Asset-relative (v2; abstain / mask when outside annulus or inbound gates fail):**
+- `range_min_nm`, `closing_rate_med_kn` / `closing_rate_p90_kn`, `bearing_rate_std_dps`
+- `dcpa_nm`, `tcpa_s`, `closing_frac`, `inbound_leg_persistence_s`
+- Same last-*W* window policy as kinematics; never impute 0.
+
 **Excluded:**
-- `range_to_shore` — **not computed** (geography ≠ behavior; no shoreline +
-  cross-region normalization). Do not silently substitute the track centroid.
+- `range_to_shore` — **not computed** as a static geography feature (geography ≠
+  behavior; no shoreline + cross-region normalization). Do not silently
+  substitute the track centroid. **Not the same object** as asset-relative
+  encounter features (closing rate, bearing-rate stability, CPA relative to a
+  *designated defended point*) — those live in the `asset_relative` block of
+  scorer contract v2 (`configs/defense/scorer_features.yaml`), with engagement
+  definitions in `configs/defense/engagement_geometry.yaml` and rationale in
+  `docs/ENGAGEMENT_GEOMETRY.md`.
 - `pos_speed_mean_kn` — GPS-jitter inflated over small `dt`.
 - Heading-derived features — Class-B heading largely unavailable
   (`heading_avail_frac` retained as a quality flag only).
@@ -244,6 +244,8 @@ not be reported.
 ---
 
 ## Change log
+- 2026-07-30 — Scorer contract v2: added `asset_relative` encounter-geometry
+  feature family; kinematics `core`/`course` column names unchanged.
 - 2026-07-22 — Dropped mirrored `kinematics.features` list from `configs/base.yaml`;
   contract lives only in `scorer_features.yaml` (`feature_spec` pointer retained).
 - 2026-07-19 — Scorer feature contract frozen in

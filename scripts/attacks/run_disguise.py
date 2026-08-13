@@ -52,6 +52,11 @@ from counterusv.attacks.disguise import (  # noqa: E402
 from counterusv.attacks.evasion import DifferentiableSurrogate, target_confidence  # noqa: E402
 from counterusv.attacks.marine_eot import MarineEOT  # noqa: E402
 from counterusv.attacks.patch import load_patch_config  # noqa: E402
+from counterusv.attacks.transfer import (  # noqa: E402
+    patch_bank_dir,
+    save_patch_bank_entry,
+    write_patch_bank_manifest,
+)
 from counterusv.data.letterbox import letterbox_image, remap_boxes  # noqa: E402
 
 DEFAULT_OUT = REPO_ROOT / "results" / "attacks" / "disguise"
@@ -209,6 +214,7 @@ def run_one_benign(
     out_root: Path,
     input_size: int,
     dry_run: bool,
+    save_patches: bool = False,
 ) -> dict[str, Any]:
     out_dir = out_root / family / benign
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -248,6 +254,8 @@ def run_one_benign(
     )
 
     results = []
+    bank_rows: list[dict] = []
+    bank = patch_bank_dir(out_dir) if save_patches else None
     craft_device = attacker.surrogate.device
     for i, t in enumerate(targets):
         rng = np.random.default_rng(seed + i)
@@ -282,6 +290,15 @@ def run_one_benign(
             attack_loss_final=history[-1]["attack"] if history else None,
         )
         results.append(res)
+        if bank is not None:
+            bank_rows.append(save_patch_bank_entry(
+                bank,
+                image_id=t["image_id"],
+                target_xyxy=target_xyxy,
+                placement=placement,
+                attacked_rgb=patched_rgb,
+                patch_chw=patch.detach().clamp(0, 1).cpu().numpy(),
+            ))
         if i < gallery:
             save_gallery(
                 out_dir / "gallery", t["image_id"], canvas_rgb, patched_rgb,
@@ -295,6 +312,23 @@ def run_one_benign(
             f"L0_tmsr={bool(l0.get('tmsr'))}",
             flush=True,
         )
+
+    if bank is not None:
+        write_patch_bank_manifest(
+            bank,
+            attack="disguise",
+            surrogate=family,
+            instances=bank_rows,
+            extra={
+                "benign_class": benign,
+                "seed": seed,
+                "steps": steps,
+                "lr": lr,
+                "true_class": cfg.true_class,
+                "input_size": input_size,
+            },
+        )
+        print(f"[disguise] wrote patch bank → {bank.relative_to(REPO_ROOT)}")
 
     tmsr = aggregate_tmsr(results)
     n_eligible = sum(1 for r in results if r.clean_hostile)
@@ -353,6 +387,10 @@ def main() -> int:
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--save-patches", action="store_true",
+        help="write patch_bank/ for transfer eval",
+    )
     args = ap.parse_args()
 
     cfg = load_disguise_config(args.config)
@@ -400,6 +438,7 @@ def main() -> int:
             device=device, targets=targets, steps=steps, lr=lr,
             axes=axes, levels=levels, seed=seed, gallery=args.gallery,
             out_root=args.out_dir, input_size=input_size, dry_run=args.dry_run,
+            save_patches=args.save_patches,
         ))
 
     # Family-level summary when more than one benign class.

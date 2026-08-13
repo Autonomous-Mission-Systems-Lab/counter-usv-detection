@@ -185,14 +185,13 @@ eo_sources:
       "Sail boat": sailing
       "Other": unknown_other
     notes: >
-      On-shore video subset (used both as detection scenes as detection scenes and for the
-      video-derived non-cooperative tracks for video tracks). Labels live in the ObjectGT
-      `.mat` (structXML per-frame array; fields ObjectType + BB = [x,y,w,h], where
-      x/y is the top-left and may be negative when a box runs off-frame). Class
-      strings are exactly as keyed above — note "Sail boat" (with a space) and
-      "Other" (singular). "Vessel/ship" is coarse (most large vessels) — revisit if
-      finer labels are recoverable. No explicit fishing class (fishing craft fall
-      under Boat/Vessel).
+      On-shore video subset used as EO detection scenes (frames sampled into the
+      COCO master). Labels live in the ObjectGT `.mat` (structXML per-frame array;
+      fields ObjectType + BB = [x,y,w,h], where x/y is the top-left and may be
+      negative when a box runs off-frame). Class strings are exactly as keyed above
+      — note "Sail boat" (with a space) and "Other" (singular). "Vessel/ship" is
+      coarse (most large vessels) — revisit if finer labels are recoverable. No
+      explicit fishing class (fishing craft fall under Boat/Vessel).
 
   aboships:
     # ABOShips (Iancu et al., Remote Sensing 2021). 11 categories; verified against
@@ -277,11 +276,9 @@ ais_ship_type:
     (1) AIS carries no "small_craft" code — small benign craft self-report as 37
     (pleasure), 30 (fishing), or 0/unspecified, and many Class-B units under-report.
     So the EO `small_craft` class has no clean AIS counterpart; its benign envelope
-    is approximated from the 30/36/37 mix and validated against the video-derived
-    non-cooperative tracks (the video non-cooperative check and real-track validation). This is the carriage-bias limitation,
+    is approximated from the 30/36/37 mix. This is the carriage-bias limitation,
     surfaced here rather than hidden.
-    (2) Ship-type is self-reported and error-prone; cleaning/among-class error
-    cadence/feature handling is done at SMD video-track ingestion, not here.
+    (2) Ship-type is self-reported and error-prone.
     (3) HSC (40-49) spans fast ferries and fast utility craft; mapped to
     passenger_ferry as the dominant case — revisit if a region skews otherwise.
 
@@ -295,7 +292,7 @@ ambiguous_classes:
       research question.
   - class: recreational
     why: Intrinsically fast, so motion alone poorly falsifies the disguise. Expected
-      weakest defense class (plan 6.3).
+      weakest defense class in the per-class DDR / oracle readout.
   - mapping: "SMD-Plus 'Vessel/ship'"
     why: Coarse large-vessel bucket mapped to cargo_merchant; may absorb passenger
       or working craft. Refine only if finer labels are recoverable.

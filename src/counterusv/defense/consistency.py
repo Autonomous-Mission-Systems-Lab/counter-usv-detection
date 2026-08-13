@@ -209,8 +209,15 @@ class ConsistencyScorer:
         model_cfg: Path = DEFAULT_MODEL_CFG,
         far_target: float | None = None,
         primary_model: ModelName | None = None,
+        extra_envelopes: Sequence[str] | None = None,
     ) -> "ConsistencyScorer":
-        """Load envelope map + fitted bundles from disk (pre- / post-freeze)."""
+        """Load envelope map + fitted bundles from disk (pre- / post-freeze).
+
+        Map-listed envelopes are always loaded. Additional names from
+        ``extra_envelopes`` and ``pooled_ablation`` in the model config are
+        loaded when the joblib exists — without being added to
+        ``class_envelope_map.yaml`` (runtime override / ablation path).
+        """
         emap = _load_yaml(map_path)
         cfg = _load_yaml(model_cfg) if model_cfg.is_file() else {}
         cal = cfg.get("calibration") or {}
@@ -225,8 +232,17 @@ class ConsistencyScorer:
             if primary_model is not None
             else models_cfg.get("primary", "gmm")
         )
+        names: list[str] = list(emap.get("envelopes") or {})
+        pooled_cfg = cfg.get("pooled_ablation") or {}
+        if bool(pooled_cfg.get("enabled", False)):
+            pname = str(pooled_cfg.get("name") or "pooled_benign")
+            if pname not in names:
+                names.append(pname)
+        for name in extra_envelopes or ():
+            if name and name not in names:
+                names.append(str(name))
         envelopes: dict[str, MultiHorizonEnvelope | EnvelopeModel] = {}
-        for name in (emap.get("envelopes") or {}):
+        for name in names:
             path = Path(envelope_dir) / f"{name}.joblib"
             if not path.is_file():
                 continue
@@ -255,7 +271,9 @@ class ConsistencyScorer:
     ) -> "ConsistencyScorer":
         """Load the pinned freeze manifest (digests optional but default on).
 
-        Prefer this for Phase 5/6 so consumers pin the attested artifact set.
+        Prefer this for freeze-pinned consumers so they pin the attested artifact
+        set. Config YAML digests are not checked (git owns configs); envelope
+        and non-git data-pin digests are.
         """
         if not freeze_path.is_file():
             raise FileNotFoundError(
@@ -272,13 +290,20 @@ class ConsistencyScorer:
         model_cfg = REPO_ROOT / model_rel
 
         if verify_digests:
+            # Config YAMLs are path-only (git owns them). Digests cover envelopes
+            # and any non-git data pins nested under configs (e.g. placements).
             for label, block in (data.get("configs") or {}).items():
-                p = REPO_ROOT / block["path"]
+                rel = block.get("path")
+                if not rel or not block.get("sha256"):
+                    continue
+                if rel.startswith("configs/"):
+                    continue
+                p = REPO_ROOT / rel
                 got = _file_sha256(p)
-                exp = block.get("sha256")
-                if exp and got != exp:
+                exp = block["sha256"]
+                if got != exp:
                     raise ValueError(
-                        f"freeze digest mismatch for config {label}: "
+                        f"freeze digest mismatch for data pin {label}: "
                         f"{p} sha256={got[:12]}… expected {exp[:12]}…"
                     )
             for name, block in (data.get("envelopes") or {}).items():
@@ -302,20 +327,55 @@ class ConsistencyScorer:
         if ft is None:
             ft = (data.get("far_floor") or {}).get("default_far")
         pm = primary_model or data.get("primary_model") or "gmm"
+        # Freeze roster may include ablation envelopes (e.g. pooled_benign)
+        # that are not in class_envelope_map — pass them as extras so they load.
+        freeze_extras = list(env_entries.keys())
+        pooled = data.get("pooled_ablation")
+        if pooled and str(pooled) not in freeze_extras:
+            freeze_extras.append(str(pooled))
         return cls.from_artifacts(
             envelope_dir=envelope_dir,
             map_path=map_path,
             model_cfg=model_cfg,
             far_target=ft,
             primary_model=pm,  # type: ignore[arg-type]
+            extra_envelopes=freeze_extras,
         )
 
     # ------------------------------------------------------------------
     # Policy helpers
     # ------------------------------------------------------------------
 
-    def resolve_envelope(self, asserted_class: str) -> tuple[str, str | None, str | None]:
-        """Return ``(policy, envelope_name, reason)`` for an EO class name."""
+    def attach_envelope(
+        self,
+        name: str,
+        path: Path | str,
+    ) -> None:
+        """Load an extra envelope joblib into ``self.envelopes`` (ablation).
+
+        Does not modify ``eo_class_map``. Prefer ``from_freeze`` when the
+        kinematics freeze already lists the ablation (``pooled_ablation`` /
+        roster entry); this helper remains for ad-hoc overrides.
+        """
+        p = Path(path)
+        if not p.is_absolute():
+            p = REPO_ROOT / p
+        if not p.is_file():
+            raise FileNotFoundError(f"envelope artifact not found: {p}")
+        self.envelopes[str(name)] = load_envelope(p)
+
+    def resolve_envelope(
+        self,
+        asserted_class: str,
+        *,
+        envelope_override: str | None = None,
+    ) -> tuple[str, str | None, str | None]:
+        """Return ``(policy, envelope_name, reason)`` for an EO class name.
+
+        When ``envelope_override`` is set and the class is scoreable, the
+        override name replaces the map envelope. Abstain / unknown_class are
+        unchanged (override ignored) so routing policy stays map-driven.
+        """
         entry = self.eo_class_map.get(asserted_class)
         if entry is None:
             return "unknown_class", None, f"class {asserted_class!r} not in eo_class_map"
@@ -325,6 +385,8 @@ class ConsistencyScorer:
         env = entry.get("envelope")
         if not env:
             return "abstain", None, "score policy but no envelope name"
+        if envelope_override:
+            return "score", str(envelope_override), "envelope_override"
         return "score", str(env), entry.get("reason")
 
     def scoreable_classes(self) -> list[str]:
@@ -354,6 +416,7 @@ class ConsistencyScorer:
         model_name: ModelName | None = None,
         purpose: Purpose = "defense",
         track_meta: Mapping[str, Any] | pd.Series | None = None,
+        envelope_override: str | None = None,
     ) -> ConsistencyResult:
         """Score ``(asserted_class, track features)`` against the benign envelope.
 
@@ -379,6 +442,10 @@ class ConsistencyScorer:
         track_meta
             Optional role/source/canonical_class tags. Required when
             ``purpose="train"``.
+        envelope_override
+            When set and the asserted class is scoreable, score against this
+            envelope name instead of the class map (pooled ablation). Abstain
+            / unknown classes ignore the override.
         """
         far = float(self.far_target if far_target is None else far_target)
         model = model_name or self.primary_model
@@ -390,7 +457,9 @@ class ConsistencyScorer:
         elif purpose != "defense":
             raise ValueError(f"unknown purpose {purpose!r}")
 
-        policy, env_name, reason = self.resolve_envelope(asserted_class)
+        policy, env_name, reason = self.resolve_envelope(
+            asserted_class, envelope_override=envelope_override
+        )
         if policy == "unknown_class":
             return ConsistencyResult(
                 asserted_class=asserted_class,

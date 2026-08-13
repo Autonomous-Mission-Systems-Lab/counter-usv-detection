@@ -104,7 +104,11 @@ class EnvelopeModel:
             sub = "core"
         fit = self.subspaces[sub][model_name]
         feats = fit.feature_names
-        x = np.array([[float(row[c]) for c in feats]], dtype="float64")
+        if isinstance(row, dict):
+            vals = [row.get(c, np.nan) for c in feats]
+        else:
+            vals = [row[c] if c in row.index else np.nan for c in feats]
+        x = np.array([[float(v) if pd.notna(v) else np.nan for v in vals]], dtype="float64")
         if np.isnan(x).any():
             return {
                 "score": None, "subspace": sub, "model": model_name,
@@ -261,10 +265,16 @@ def fit_envelope(
     *,
     cfg: dict,
 ) -> EnvelopeModel | None:
-    """Fit all model families / subspaces for one envelope."""
+    """Fit all model families / subspaces for one envelope.
+
+    When ``cfg["features"]["geometry"]`` is set, those columns are appended to
+    every subspace (extended vector for the kinematics_geometry arm). Rows
+    missing required geometry columns are dropped via ``dropna``.
+    """
     feat_cfg = cfg.get("features") or {}
     core_cols = list(feat_cfg.get("core") or [])
     course_cols = list(feat_cfg.get("course") or [])
+    geometry_cols = list(feat_cfg.get("geometry") or [])
     subspaces_cfg = list(cfg.get("subspaces") or ["core", "core_course"])
     models_cfg = cfg.get("models") or {}
     primary = str(models_cfg.get("primary") or "gmm")
@@ -288,6 +298,8 @@ def fit_envelope(
 
     for subspace in subspaces_cfg:
         cols = list(core_cols) if subspace == "core" else list(core_cols) + list(course_cols)
+        if geometry_cols:
+            cols = cols + list(geometry_cols)
         X_tr, idx_tr = _matrix(train_e, cols)
         X_va, idx_va = _matrix(val_e, cols)
         if len(X_tr) < min_rows:
@@ -373,7 +385,7 @@ def fit_envelope(
         name=name,
         members=members,
         subspaces=fitted,
-        core_features=core_cols,
+        core_features=core_cols + geometry_cols,
         course_features=course_cols,
         window_s=window_s,
         primary=primary,  # type: ignore[arg-type]

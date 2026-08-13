@@ -184,49 +184,70 @@ def headline_far(far: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _roster_entry(
+    name: str,
+    envelope_dir: Path,
+    fit_envs: dict[str, Any],
+) -> dict[str, Any]:
+    path = envelope_dir / f"{name}.joblib"
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing envelope bundle: {path}")
+    entry_fit = fit_envs.get(name) or {}
+    subspaces = (entry_fit.get("subspaces") or {}).get("core") or {}
+    gmm = subspaces.get("gmm") or {}
+    k_by_h: dict[str, Any] = {}
+    windows_meta = entry_fit.get("horizons") or {}
+    if isinstance(windows_meta, dict):
+        for ws, wblock in windows_meta.items():
+            if not isinstance(wblock, dict):
+                continue
+            if wblock.get("gmm_k") is not None:
+                k_by_h[str(ws)] = wblock.get("gmm_k")
+            else:
+                core = (
+                    ((wblock.get("subspaces") or {}).get("core") or {}).get(
+                        "gmm"
+                    )
+                    or {}
+                )
+                if core.get("n_components") is not None:
+                    k_by_h[str(ws)] = core.get("n_components")
+
+    return {
+        "path": _rel(path),
+        "sha256": _sha256(path),
+        "bytes": path.stat().st_size,
+        "primary_gmm_n_components": gmm.get("n_components")
+        or k_by_h.get(str(entry_fit.get("primary_window_s") or 300)),
+        "primary_n_train": gmm.get("n_train"),
+        "primary_n_val": gmm.get("n_val"),
+        "gmm_k_by_horizon": k_by_h or None,
+        "members": entry_fit.get("members"),
+    }
+
+
 def envelope_roster(
     envelope_dir: Path,
     emap: dict[str, Any],
     fit: dict[str, Any],
 ) -> dict[str, Any]:
+    """Digest class-map envelopes plus the pooled ablation when fitted."""
     out: dict[str, Any] = {}
     fit_envs = fit.get("envelopes") or {}
     for name in emap.get("envelopes") or {}:
-        path = envelope_dir / f"{name}.joblib"
-        if not path.is_file():
-            raise FileNotFoundError(f"Missing envelope bundle: {path}")
-        entry_fit = fit_envs.get(name) or {}
-        subspaces = (entry_fit.get("subspaces") or {}).get("core") or {}
-        gmm = subspaces.get("gmm") or {}
-        k_by_h: dict[str, Any] = {}
-        windows_meta = entry_fit.get("horizons") or {}
-        if isinstance(windows_meta, dict):
-            for ws, wblock in windows_meta.items():
-                if not isinstance(wblock, dict):
-                    continue
-                if wblock.get("gmm_k") is not None:
-                    k_by_h[str(ws)] = wblock.get("gmm_k")
-                else:
-                    core = (
-                        ((wblock.get("subspaces") or {}).get("core") or {}).get(
-                            "gmm"
-                        )
-                        or {}
-                    )
-                    if core.get("n_components") is not None:
-                        k_by_h[str(ws)] = core.get("n_components")
+        out[name] = _roster_entry(name, envelope_dir, fit_envs)
 
-        out[name] = {
-            "path": _rel(path),
-            "sha256": _sha256(path),
-            "bytes": path.stat().st_size,
-            "primary_gmm_n_components": gmm.get("n_components")
-            or k_by_h.get(str(entry_fit.get("primary_window_s") or 300)),
-            "primary_n_train": gmm.get("n_train"),
-            "primary_n_val": gmm.get("n_val"),
-            "gmm_k_by_horizon": k_by_h or None,
-            "members": entry_fit.get("members"),
-        }
+    # Ablation envelope (not in class_envelope_map) — pin when fitted.
+    pooled_name = fit.get("pooled_name")
+    if pooled_name and str(pooled_name) not in out:
+        pname = str(pooled_name)
+        path = envelope_dir / f"{pname}.joblib"
+        if path.is_file():
+            out[pname] = _roster_entry(pname, envelope_dir, fit_envs)
+        elif pname in fit_envs:
+            raise FileNotFoundError(
+                f"fit_summary lists pooled_name={pname!r} but missing {path}"
+            )
     return out
 
 
@@ -272,7 +293,7 @@ def declared_interface() -> dict[str, Any]:
             "filter_benign_training refuse hostile|usv|non_target; "
             "purpose='defense'|'eval' may score any contact"
         ),
-        "consumers": ["Phase 5 defense wiring", "Phase 6 evaluation"],
+        "consumers": ["defense wiring", "evaluation consumers"],
     }
 
 
@@ -296,8 +317,8 @@ def write_model_card(path: Path, payload: dict[str, Any]) -> None:
         "Class–kinematics consistency scoring for a shore-based counter-USV "
         "defense: given an EO-asserted vessel class and a contact's track "
         "features, return an anomaly score against a **one-class benign "
-        "envelope** learned from real AIS. Downstream: Phase 5 defense "
-        "wiring and Phase 6 evaluation (RQ2 FAR axis; DDR under "
+        "envelope** learned from real AIS. Downstream: defense "
+        "wiring and evaluation (RQ2 FAR axis; DDR under "
         "perfect-disguise oracle and patch conditions).",
         "",
         "## Training data",
@@ -478,19 +499,11 @@ def main() -> int:
         or (model_cfg.get("windows") or {}).get("windows_s")
         or [120, 180, 300],
         "primary_window_s": far.get("primary_window_s") or 300,
+        # Config paths only — digests live in git; freeze pins results/envelopes.
         "configs": {
-            "class_envelope_map": {
-                "path": _rel(DEFAULT_MAP),
-                "sha256": _sha256(DEFAULT_MAP),
-            },
-            "scorer_features": {
-                "path": _rel(DEFAULT_FEATURES),
-                "sha256": _sha256(DEFAULT_FEATURES),
-            },
-            "behavior_model": {
-                "path": _rel(DEFAULT_MODEL_CFG),
-                "sha256": _sha256(DEFAULT_MODEL_CFG),
-            },
+            "class_envelope_map": {"path": _rel(DEFAULT_MAP)},
+            "scorer_features": {"path": _rel(DEFAULT_FEATURES)},
+            "behavior_model": {"path": _rel(DEFAULT_MODEL_CFG)},
         },
         "features": {
             "core": core,
@@ -500,6 +513,7 @@ def main() -> int:
         },
         "policy": policy_tables(emap),
         "envelopes": envelopes,
+        "pooled_ablation": fit.get("pooled_name"),
         "firewall_attestation": attestation,
         "far_floor": headline_far(far),
         "interface": declared_interface(),

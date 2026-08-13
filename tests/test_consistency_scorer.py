@@ -316,3 +316,82 @@ def test_filter_benign_training_drops_blocked():
     assert out.iloc[0]["canonical_class"] == "fishing"
     with pytest.raises(FirewallError):
         filter_benign_training(df, raise_on_blocked=True)
+
+
+# ---------------------------------------------------------------------------
+# Envelope override (pooled ablation / envelope_override)
+# ---------------------------------------------------------------------------
+
+def test_envelope_override_routes_scoreable_class():
+    scorer = _toy_scorer()
+    pooled = MultiHorizonEnvelope(
+        name="pooled_benign",
+        members={"canonical_class": ["fishing", "recreational"]},
+        primary_window_s=300,
+        core_features=list(CORE),
+        course_features=["turn_rate_mean_dps", "cog_circ_std_deg"],
+        horizons={300: _toy_envelope("pooled_benign", 300)},
+        primary="gmm",
+    )
+    scorer.envelopes["pooled_benign"] = pooled
+    res = scorer.score(
+        "recreational", _benign_feats(), envelope_override="pooled_benign"
+    )
+    assert res.status == "scored"
+    assert res.envelope_used == "pooled_benign"
+    policy, env, reason = scorer.resolve_envelope(
+        "recreational", envelope_override="pooled_benign"
+    )
+    assert policy == "score"
+    assert env == "pooled_benign"
+    assert reason == "envelope_override"
+
+
+def test_envelope_override_ignored_on_abstain():
+    scorer = _toy_scorer()
+    scorer.envelopes["pooled_benign"] = MultiHorizonEnvelope(
+        name="pooled_benign",
+        members={},
+        primary_window_s=300,
+        core_features=list(CORE),
+        course_features=["turn_rate_mean_dps", "cog_circ_std_deg"],
+        horizons={300: _toy_envelope("pooled_benign", 300)},
+        primary="gmm",
+    )
+    res = scorer.score("usv", _benign_feats(), envelope_override="pooled_benign")
+    assert res.status == "abstain"
+    assert res.envelope_used is None
+
+
+def test_envelope_override_missing_envelope():
+    scorer = _toy_scorer()
+    res = scorer.score(
+        "recreational", _benign_feats(), envelope_override="pooled_benign"
+    )
+    assert res.status == "missing_envelope"
+    assert res.envelope_used == "pooled_benign"
+
+
+def test_attach_envelope(tmp_path):
+    from counterusv.kinematics.behavior_model import save_envelope
+
+    scorer = _toy_scorer()
+    assert "pooled_benign" not in scorer.envelopes
+    bundle = MultiHorizonEnvelope(
+        name="pooled_benign",
+        members={"canonical_class": ["fishing"]},
+        primary_window_s=300,
+        core_features=list(CORE),
+        course_features=["turn_rate_mean_dps", "cog_circ_std_deg"],
+        horizons={300: _toy_envelope("pooled_benign", 300)},
+        primary="gmm",
+    )
+    path = tmp_path / "pooled_benign.joblib"
+    save_envelope(bundle, path)
+    scorer.attach_envelope("pooled_benign", path)
+    assert "pooled_benign" in scorer.envelopes
+    res = scorer.score(
+        "recreational", _benign_feats(), envelope_override="pooled_benign"
+    )
+    assert res.status == "scored"
+    assert res.envelope_used == "pooled_benign"

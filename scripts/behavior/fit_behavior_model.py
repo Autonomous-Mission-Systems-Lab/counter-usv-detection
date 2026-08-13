@@ -15,6 +15,7 @@ Usage
 -----
     python scripts/behavior/fit_behavior_model.py
     python scripts/behavior/fit_behavior_model.py --envelope fishing
+    python scripts/behavior/fit_behavior_model.py --pooled-only
     python scripts/behavior/fit_behavior_model.py --smoke
 """
 
@@ -292,16 +293,39 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--smoke", action="store_true",
                     help="subsample train/val/test for a fast wiring check")
+    ap.add_argument(
+        "--skip-pooled",
+        action="store_true",
+        help="skip pooled_ablation envelope even if enabled in config",
+    )
+    ap.add_argument(
+        "--pooled-only",
+        action="store_true",
+        help="fit only the pooled_ablation envelope",
+    )
     args = ap.parse_args()
 
     cfg = _load_yaml(args.config)
     emap = _load_yaml(REPO_ROOT / (cfg.get("envelope_map")
                                    or "configs/defense/class_envelope_map.yaml"))
-    envelopes = emap.get("envelopes") or {}
+    envelopes = dict(emap.get("envelopes") or {})
     if args.envelope:
         if args.envelope not in envelopes:
             ap.error(f"unknown envelope {args.envelope!r}")
         envelopes = {args.envelope: envelopes[args.envelope]}
+
+    pooled_cfg = cfg.get("pooled_ablation") or {}
+    pooled_name = str(pooled_cfg.get("name") or "pooled_benign")
+    do_pooled = (
+        bool(pooled_cfg.get("enabled", False))
+        and not args.skip_pooled
+        and args.envelope is None
+    )
+    if args.pooled_only:
+        if not bool(pooled_cfg.get("enabled", False)):
+            ap.error("--pooled-only requires pooled_ablation.enabled in config")
+        envelopes = {}
+        do_pooled = True
 
     windows = [int(w) for w in (cfg.get("windows_s") or [cfg.get("window_s") or 300])]
     primary_w = int(cfg.get("window_s") or max(windows))
@@ -343,13 +367,22 @@ def main() -> int:
         "core_features": (cfg.get("features") or {}).get("core"),
         "course_features": (cfg.get("features") or {}).get("course"),
         "primary": primary,
+        "pooled_name": pooled_name if do_pooled else None,
         "envelopes": {},
         "smoke": bool(args.smoke),
     }
 
+    fit_targets: list[tuple[str, dict]] = [
+        (name, dict(espec.get("members") or {}))
+        for name, espec in envelopes.items()
+    ]
+    if do_pooled:
+        fit_targets.append(
+            (pooled_name, dict(pooled_cfg.get("members") or {}))
+        )
+
     t0 = time.perf_counter()
-    for name, espec in envelopes.items():
-        members = espec.get("members") or {}
+    for name, members in fit_targets:
         print(f"\n[fit] === {name} ===")
         horizon_models: dict[int, EnvelopeModel] = {}
         horizons_meta: dict[str, Any] = {}
@@ -403,7 +436,14 @@ def main() -> int:
               f"FAR={_fmt_pct(mh.get('far'))}")
 
     payload["wall_clock_s"] = round(time.perf_counter() - t0, 1)
+    # When --pooled-only, merge into existing fit_summary rather than wiping it.
     sum_path = args.out / "fit_summary.json"
+    if args.pooled_only and sum_path.is_file():
+        prev = json.loads(sum_path.read_text())
+        prev_envs = dict(prev.get("envelopes") or {})
+        prev_envs.update(payload["envelopes"])
+        payload["envelopes"] = prev_envs
+        payload["merged_pooled_only"] = True
     sum_path.write_text(json.dumps(payload, indent=2) + "\n")
     report = args.out / "fit_report.md"
     write_report(report, payload)
