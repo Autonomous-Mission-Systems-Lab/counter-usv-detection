@@ -1,0 +1,29 @@
+{
+  "title": "Counter-USV Adversarial Robustness — derived data & results",
+  "description": "Weight-free derived annotations, track/behavior/defense features, evaluation freezes, and paper figures for the Counter-USV adversarial robustness project. Companion to the GitHub code repository. Model weights and patch-bank tensors are withheld (dual-use).",
+  "upload_type": "dataset",
+  "access_right": "open",
+  "license": "CC-BY-4.0",
+  "creators": [
+    {
+      "name": "Reifschneider, Jon",
+      "affiliation": "Autonomous Mission Systems Lab (AMSL), Duke University"
+    }
+  ],
+  "keywords": [
+    "maritime",
+    "USV",
+    "adversarial robustness",
+    "AIS",
+    "object detection"
+  ],
+  "related_identifiers": [
+    {
+      "relation": "isSupplementTo",
+      "identifier": "https://github.com/Autonomous-Mission-Systems-Lab/counter-usv-detection",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "notes": "Code is MIT-licensed in the companion GitHub repository (Zenodo–GitHub code DOI to be cross-linked when minted). See ARTIFACT_README.md and docs/DATA_LICENSES.md in the deposit."
+}

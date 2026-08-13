@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+title: "Counter-USV Adversarial Robustness"
+message: "If you use this software or derived data, please cite it as below."
+type: software
+authors:
+  - family-names: Reifschneider
+    given-names: Jon
+    affiliation: "Autonomous Mission Systems Lab (AMSL), Duke University"
+repository-code: "https://github.com/Autonomous-Mission-Systems-Lab/counter-usv-detection"
+license: MIT
+license-url: "https://opensource.org/licenses/MIT"
+abstract: >-
+  Testbed and class–kinematics consistency defense for shore-based counter-USV
+  EO detection under adversarial attack. Public artifacts include code, derived
+  annotations/features, evaluation freezes, and paper figures. Trained model
+  weights are withheld for dual-use reasons and available upon reasonable request.
+keywords:
+  - maritime
+  - USV
+  - adversarial robustness
+  - object detection
+  - AIS
+preferred-citation:
+  type: generic
+  title: "Counter-USV Adversarial Robustness"
+  authors:
+    - family-names: Reifschneider
+      given-names: Jon
+  year: 2026
+references:
+  - type: dataset
+    title: "MarineCadastre AIS"
+    notes: "NOAA Office for Coastal Management / USCG NAIS historical AIS"
+  - type: article
+    title: "Mcships: A Large-Scale Ship Dataset For Detection And Fine-Grained Categorization In The Wild"
+    authors:
+      - family-names: Zheng
+        given-names: Yitong
+      - family-names: Zhang
+        given-names: Suiping
+    year: 2020
+    doi: "10.1109/ICME46284.2020.9102907"
+  - type: dataset
+    title: "ABOShips"
+    doi: "10.5281/zenodo.4736931"

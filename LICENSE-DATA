@@ -1,0 +1,20 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+Copyright (c) 2026 Autonomous Mission Systems Lab (AMSL), Duke University
+
+The derived data artifacts redistributed with this project (annotations other
+than McShips, split manifests, derived track / behavior / defense features,
+evaluation summaries, and paper figures) are licensed under CC BY 4.0:
+
+    https://creativecommons.org/licenses/by/4.0/
+
+You are free to share and adapt the material for any purpose, even commercially,
+provided you give appropriate credit, provide a link to the license, and
+indicate if changes were made.
+
+This license covers **our** derived products only. Upstream sources remain under
+their original terms — see docs/DATA_LICENSES.md. This deposit does **not**
+include model weights, raw imagery, bulk AIS feeds, point-level AIS, McShips
+annotation exports, or adversarial patch-bank tensors.
+
+Code in this repository is separately licensed under the MIT License (see LICENSE).
