@@ -28,6 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_DIR = REPO_ROOT / "data"
 
 # Relative to data_dir. Order is the release inventory order.
+# Excludes: point-level AIS (cleaned feed copy, not a derived feature set);
+# McShips annotations (no stated license — omit from permissive slice).
 DERIVED_ARTIFACTS = [
     # Public contracts / cards
     "taxonomy.yaml",
@@ -35,11 +37,10 @@ DERIVED_ARTIFACTS = [
     "DATACARD.md",
     "DATACARD_EO.md",
     "DATACARD_TRACKS.md",
-    # EO annotations
+    # EO annotations (McShips omitted — regenerate locally via fetch_data)
     "annotations/coco_master.json",
     "annotations/convert_summary.json",
     "annotations/seaships.coco.json",
-    "annotations/mcships.coco.json",
     "annotations/aboships.coco.json",
     "annotations/smd.coco.json",
     "annotations/usv.coco.json",
@@ -53,13 +54,30 @@ DERIVED_ARTIFACTS = [
     # Splits
     "splits/eo_image_splits.csv",
     "splits/ais_track_splits.csv",
-    "splits/video_eval_pool.csv",
     "splits/splits_summary.json",
-    # Trajectory features (derived; not raw AIS feeds)
+    # Trajectory features (derived; not raw AIS / not point-level feeds)
     "tracks/tracks_ais.parquet",
-    "tracks/tracks_ais_points.parquet",
-    "tracks/tracks_video.parquet",
-    "tracks/tracks_video_points.parquet",
+    # Behavior-model inputs (windowed kinematics + train manifest)
+    "behavior/features_window_60s.parquet",
+    "behavior/features_window_120s.parquet",
+    "behavior/features_window_180s.parquet",
+    "behavior/features_window_300s.parquet",
+    "behavior/features_window_600s.parquet",
+    "behavior/features_whole_track.parquet",
+    "behavior/benign_train_manifest.parquet",
+    "behavior/benign_corpus_summary.json",
+    "behavior/features_windows_summary.json",
+    "behavior/envelope_coverage.json",
+    # Defense geometry features + placements
+    "defense/features_geometry_window_120s.parquet",
+    "defense/features_geometry_window_180s.parquet",
+    "defense/features_geometry_window_300s.parquet",
+    "defense/features_geometry_window_600s.parquet",
+    "defense/placements.parquet",
+    "defense/placements_digest.json",
+    "defense/placements_report.md",
+    "defense/geometry_coverage_report.json",
+    "defense/geometry_coverage_report.md",
     # USV provenance only (pixels stay under raw/ and are not redistributed)
     "raw/usv/manifest.csv",
 ]
@@ -138,7 +156,13 @@ def main() -> int:
             "includes_raw_imagery": False,
             "includes_bulk_ais": False,
             "includes_usv_pixels": False,
-            "redistributes": "annotations, manifests, derived track features, taxonomy, contracts",
+            "includes_ais_points": False,
+            "includes_mcships_annotations": False,
+            "includes_model_weights": False,
+            "redistributes": (
+                "annotations (McShips omitted), manifests, derived track/behavior/"
+                "defense features, taxonomy, contracts"
+            ),
         },
         "counts": {
             "eo_images": master.get("images"),
@@ -148,7 +172,6 @@ def main() -> int:
             "patch_eligible": totals.get("patch_eligible"),
             "eo_split": (splits.get("eo") or {}).get("by_split"),
             "ais_tracks": (splits.get("ais") or {}).get("tracks"),
-            "video_eval_pool_tracks": (splits.get("video") or {}).get("tracks"),
         },
         "artifacts": rows,
         "n_artifacts": len(rows),
